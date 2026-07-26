@@ -2,8 +2,8 @@ import { apiRequest } from "./client";
 
 export const attendanceApi = {
   activeSessions: () => apiRequest<unknown[]>("/attendance/sessions/active"),
-  mark: (body: { sessionId: string; pin?: string; qrToken?: string; latitude: number; longitude: number; accuracy: number }) =>
-    apiRequest<unknown>(`/attendance/sessions/${body.sessionId}/mark`, { method: "POST", body: JSON.stringify(body) }),
+  mark: ({ sessionId, ...body }: { sessionId: string; pin?: string; qrToken?: string; latitude: number; longitude: number; accuracy: number }) =>
+    apiRequest<unknown>(`/attendance/sessions/${sessionId}/mark`, { method: "POST", body: JSON.stringify(body) }),
   createSession: (body: unknown) =>
     apiRequest<unknown>("/attendance/sessions", { method: "POST", body: JSON.stringify(body) }),
   closeSession: (sessionId: string) =>

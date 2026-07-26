@@ -1,0 +1,122 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Badge, Button, Card, CardHeader } from "@classconnect/ui";
+import { MapPin, QrCode, ShieldCheck } from "lucide-react";
+import { attendanceApi } from "@/lib/api/endpoints";
+import { ApiError } from "@/lib/api/client";
+import { useToast } from "./toast-provider";
+
+type ActiveSession = {
+  id: string;
+  radiusMetres: number;
+  expiresAt: string;
+  course: { code: string; title: string };
+};
+
+export function AttendanceCheckIn() {
+  const { toast } = useToast();
+  const [digits, setDigits] = useState(["", "", "", ""]);
+  const inputs = useRef<Array<HTMLInputElement | null>>([]);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [sessionId, setSessionId] = useState("");
+  const [qrToken, setQrToken] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const scannedSession = params.get("session") ?? "";
+    setQrToken(params.get("token") ?? "");
+    attendanceApi.activeSessions()
+      .then((items) => {
+        const active = items as ActiveSession[];
+        setSessions(active);
+        setSessionId(active.some((item) => item.id === scannedSession) ? scannedSession : active[0]?.id ?? "");
+      })
+      .catch((error) => toast("Active sessions could not be loaded", error instanceof ApiError ? error.message : "Please retry.", "danger"));
+  }, []);
+
+  function update(index: number, value: string) {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    setDigits((current) => current.map((item, itemIndex) => itemIndex === index ? digit : item));
+    if (digit) inputs.current[index + 1]?.focus();
+  }
+
+  function submit() {
+    const pin = digits.join("");
+    if (!sessionId) {
+      toast("No active session", "Ask your lecturer to start an attendance session.", "warning");
+      return;
+    }
+    if (!qrToken && pin.length !== 4) {
+      toast("Enter the complete PIN", "All four numbers are required.", "warning");
+      return;
+    }
+    setSubmitting(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      try {
+        await attendanceApi.mark({
+          sessionId,
+          ...(qrToken ? { qrToken } : { pin }),
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+        setDigits(["", "", "", ""]);
+        setQrToken("");
+        window.history.replaceState({}, "", "/student/attendance");
+        toast("Attendance marked", `${sessions.find((item) => item.id === sessionId)?.course.code ?? "Class"} · GPS and session checks passed.`, "success");
+      } catch (error) {
+        toast("Attendance not verified", error instanceof ApiError ? error.message : "Please retry.", "danger");
+      } finally {
+        setSubmitting(false);
+      }
+    }, () => {
+      setSubmitting(false);
+      toast("Location is required", "Allow precise location access to verify the classroom geofence.", "danger");
+    }, { enableHighAccuracy: true });
+  }
+
+  const selected = sessions.find((item) => item.id === sessionId);
+
+  return (
+    <div className="grid grid--main">
+      <Card>
+        <CardHeader title="Active class session" description={selected ? `${selected.course.code} — ${selected.course.title}` : "No active session available"} action={selected ? <Badge tone="success">● Live now</Badge> : <Badge tone="neutral">Waiting</Badge>} />
+        {sessions.length > 1 ? <div className="form-field"><label>Course session</label><select value={sessionId} onChange={(event) => { setSessionId(event.target.value); setQrToken(""); }}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.course.code} — {session.course.title}</option>)}</select></div> : null}
+        <div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location checked on submission</h4><p>Your device must be inside the lecturer’s {selected?.radiusMetres ?? "configured"}-metre classroom geofence.</p></div></div>
+        <div style={{ marginTop: 22, textAlign: "center" }}>
+          <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
+          {!qrToken ? <div className="pin-entry">{digits.map((digit, index) => (
+            <input
+              aria-label={`PIN digit ${index + 1}`}
+              inputMode="numeric"
+              key={index}
+              maxLength={1}
+              ref={(node) => { inputs.current[index] = node; }}
+              value={digit}
+              onChange={(event) => update(index, event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Backspace" && !digit) inputs.current[index - 1]?.focus(); }}
+            />
+          ))}</div> : <div className="scanned-qr-status"><QrCode size={22} /><span>Secure session QR scanned</span></div>}
+          <Button disabled={submitting || !sessionId} onClick={submit}><ShieldCheck size={16} /> {submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
+        </div>
+      </Card>
+      <div className="stack">
+        <Card>
+          <CardHeader title="Session details" description="Confirm the current class before submitting" />
+          <div className="course-row">
+            <div className="course-row__code">{selected?.course.code ?? "—"}</div>
+            <div><h4>{selected?.course.title ?? "No active class"}</h4><p>Verified attendance session</p></div>
+            <Badge tone="info">{selected ? new Date(selected.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</Badge>
+          </div>
+          <div style={{ marginTop: 14 }} className="activity-list">
+            <div className="activity"><span className="activity__icon"><MapPin size={17} /></span><div><strong>GPS radius</strong><p>{selected?.radiusMetres ?? "—"} metres from the classroom centre</p></div><time>Required</time></div>
+            <div className="activity"><span className="activity__icon"><ShieldCheck size={17} /></span><div><strong>Session verification</strong><p>{qrToken ? "Secure QR token supplied" : "PIN required"}</p></div><time>{qrToken ? "Ready" : "Pending"}</time></div>
+          </div>
+        </Card>
+        <div className="alert-card alert-card--warning"><span className="alert-card__icon"><MapPin size={17} /></span><div><h3>Location protection is active</h3><p>Submissions outside the geofence or from mock-location tools will be rejected and flagged.</p></div></div>
+      </div>
+    </div>
+  );
+}

@@ -133,15 +133,18 @@ export class AttendanceService {
       dto.latitude,
       dto.longitude,
     );
-    const studentAccuracyAllowance = Math.min(dto.accuracy, 25);
-    if (distance > session.radiusMetres + studentAccuracyAllowance) {
+    const lecturerAccuracyAllowance = Math.min(session.locationAccuracy ?? 0, 100);
+    const studentAccuracyAllowance = Math.min(dto.accuracy, 100);
+    const maximumPlausibleDistance = session.radiusMetres + lecturerAccuracyAllowance + studentAccuracyAllowance;
+    if (distance > maximumPlausibleDistance) {
       throw new BadRequestException(
-        `You are ${Math.round(distance)}m from the captured classroom centre; the allowed radius is ${session.radiusMetres}m. Enable precise location and retry.`,
+        `You are ${Math.round(distance)}m from the captured classroom centre; the allowed radius is ${session.radiusMetres}m and the GPS readings do not overlap it. Enable precise location and retry.`,
       );
     }
 
     const lateAt = new Date(session.startsAt.getTime() + session.lateAfterMinutes * 60_000);
-    const suspicious = dto.accuracy > Math.max(100, session.radiusMetres);
+    const outsideStrictRadius = distance > session.radiusMetres;
+    const suspicious = outsideStrictRadius || dto.accuracy > Math.max(100, session.radiusMetres);
     const status = suspicious
       ? AttendanceStatus.FLAGGED
       : new Date() > lateAt
@@ -157,7 +160,9 @@ export class AttendanceService {
         longitude: dto.longitude,
         accuracy: dto.accuracy,
         distanceMetres: distance,
-        flaggedReason: suspicious ? `Low location accuracy (${Math.round(dto.accuracy)}m); ${userAgent ?? "unknown device"}` : null,
+        flaggedReason: suspicious
+          ? `GPS uncertainty review: measured ${Math.round(distance)}m, radius ${session.radiusMetres}m, lecturer accuracy ${Math.round(session.locationAccuracy ?? 0)}m, student accuracy ${Math.round(dto.accuracy)}m; ${userAgent ?? "unknown device"}`
+          : null,
       },
     });
     await this.prisma.notification.create({

@@ -33,6 +33,7 @@ export class AttendanceService {
         data: {
           courseId: dto.courseId,
           lecturerId,
+          method: dto.method,
           pinHash: usePin ? await hash(pin, 10) : null,
           qrTokenHash: useQr ? this.digest(qrToken) : null,
           latitude: dto.latitude,
@@ -171,7 +172,7 @@ export class AttendanceService {
     const absentIds = students.map((row) => row.studentId).filter((studentId) => !markedIds.has(studentId));
     if (absentIds.length) {
       await this.prisma.attendanceRecord.createMany({
-        data: absentIds.map((studentId) => ({ sessionId: id, studentId, method: AttendanceMethod.PIN, status: AttendanceStatus.ABSENT })),
+        data: absentIds.map((studentId) => ({ sessionId: id, studentId, method: session.method, status: AttendanceStatus.ABSENT })),
         skipDuplicates: true,
       });
     }
@@ -236,7 +237,7 @@ export class AttendanceService {
   private async expireSessions() {
     const expired = await this.prisma.attendanceSession.findMany({
       where: { status: AttendanceSessionStatus.ACTIVE, expiresAt: { lte: new Date() } },
-      select: { id: true, courseId: true },
+      select: { id: true, courseId: true, method: true },
     });
     if (!expired.length) return;
     await this.prisma.attendanceSession.updateMany({
@@ -252,7 +253,7 @@ export class AttendanceService {
       const absentIds = students.map((row) => row.studentId).filter((studentId) => !markedIds.has(studentId));
       if (absentIds.length) {
         await this.prisma.attendanceRecord.createMany({
-          data: absentIds.map((studentId) => ({ sessionId: session.id, studentId, method: AttendanceMethod.PIN, status: AttendanceStatus.ABSENT })),
+        data: absentIds.map((studentId) => ({ sessionId: session.id, studentId, method: session.method, status: AttendanceStatus.ABSENT })),
           skipDuplicates: true,
         });
       }

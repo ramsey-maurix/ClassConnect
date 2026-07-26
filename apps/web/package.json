@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@classconnect/ui": "workspace:*",
+    "@zxing/browser": "^0.2.1",
     "lucide-react": "^0.468.0",
     "next": "^16.1.6",
     "qrcode.react": "^4.2.0",

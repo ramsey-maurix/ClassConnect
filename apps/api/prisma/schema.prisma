@@ -294,6 +294,7 @@ model AttendanceSession {
   id               String                   @id @default(cuid())
   courseId         String
   lecturerId       String
+  method           AttendanceMethod
   pinHash          String?
   qrTokenHash      String?
   latitude         Decimal?                 @db.Decimal(10, 7)

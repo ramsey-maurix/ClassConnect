@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardHeader } from "@classconnect/ui";
-import { MapPin, QrCode, ShieldCheck } from "lucide-react";
+import { Camera, MapPin, QrCode, ShieldCheck, X } from "lucide-react";
 import { attendanceApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
 import { useToast } from "./toast-provider";
 
 type ActiveSession = {
   id: string;
+  method: "PIN" | "QR";
   radiusMetres: number;
   expiresAt: string;
   course: { code: string; title: string };
@@ -21,6 +22,10 @@ export function AttendanceCheckIn() {
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [qrToken, setQrToken] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const video = useRef<HTMLVideoElement | null>(null);
+  const scanner = useRef<{ stop: () => void } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -35,6 +40,47 @@ export function AttendanceCheckIn() {
       })
       .catch((error) => toast("Active sessions could not be loaded", error instanceof ApiError ? error.message : "Please retry.", "danger"));
   }, []);
+
+  useEffect(() => () => scanner.current?.stop(), []);
+
+  function stopScanner() {
+    scanner.current?.stop();
+    scanner.current = null;
+    setScanning(false);
+  }
+
+  async function startScanner() {
+    setScanError("");
+    setScanning(true);
+    try {
+      const { BrowserQRCodeReader } = await import("@zxing/browser");
+      const reader = new BrowserQRCodeReader();
+      const controls = await reader.decodeFromConstraints(
+        { audio: false, video: { facingMode: { ideal: "environment" } } },
+        video.current!,
+        (result) => {
+          if (!result) return;
+          try {
+            const scanned = new URL(result.getText(), window.location.origin);
+            const scannedSession = scanned.searchParams.get("session");
+            const token = scanned.searchParams.get("token");
+            const active = sessions.find((item) => item.id === scannedSession && item.method === "QR");
+            if (!active || !token) throw new Error("This is not an active ClassConnect attendance QR code.");
+            setSessionId(active.id);
+            setQrToken(token);
+            stopScanner();
+            toast("QR code accepted", `${active.course.code} is ready for location verification.`, "success");
+          } catch (error) {
+            setScanError(error instanceof Error ? error.message : "This QR code is not valid.");
+          }
+        },
+      );
+      scanner.current = controls;
+    } catch {
+      setScanning(false);
+      setScanError("Camera access could not be started. Allow camera permission in your browser settings and retry.");
+    }
+  }
 
   function update(index: number, value: string) {
     const digit = value.replace(/\D/g, "").slice(-1);
@@ -78,16 +124,20 @@ export function AttendanceCheckIn() {
   }
 
   const selected = sessions.find((item) => item.id === sessionId);
+  const usesQr = selected?.method === "QR";
 
   return (
     <div className="grid grid--main">
       <Card>
         <CardHeader title="Active class session" description={selected ? `${selected.course.code} — ${selected.course.title}` : "No active session available"} action={selected ? <Badge tone="success">● Live now</Badge> : <Badge tone="neutral">Waiting</Badge>} />
-        {sessions.length > 1 ? <div className="form-field"><label>Course session</label><select value={sessionId} onChange={(event) => { setSessionId(event.target.value); setQrToken(""); }}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.course.code} — {session.course.title}</option>)}</select></div> : null}
+        {sessions.length > 1 ? <div className="form-field"><label>Course session</label><select value={sessionId} onChange={(event) => { setSessionId(event.target.value); setQrToken(""); stopScanner(); }}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.course.code} — {session.course.title} ({session.method})</option>)}</select></div> : null}
         <div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location checked on submission</h4><p>Your device must be inside the lecturer’s {selected?.radiusMetres ?? "configured"}-metre classroom geofence.</p></div></div>
         <div style={{ marginTop: 22, textAlign: "center" }}>
-          <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
-          {!qrToken ? <div className="pin-entry">{digits.map((digit, index) => (
+          <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : usesQr ? "Scan the lecturer’s QR code using the camera inside ClassConnect." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
+          {usesQr && !qrToken ? <div className="in-app-scanner">
+            {scanning ? <div className="in-app-scanner__viewport"><video ref={video} muted playsInline /><span className="in-app-scanner__frame" /><button type="button" aria-label="Close scanner" onClick={stopScanner}><X size={18} /></button></div> : <div className="in-app-scanner__prompt"><QrCode size={38} /><strong>Scan attendance QR</strong><span>The camera opens here without leaving the student portal.</span><Button onClick={() => void startScanner()}><Camera size={16} /> Open scanner</Button></div>}
+            {scanError ? <p className="in-app-scanner__error">{scanError}</p> : null}
+          </div> : !qrToken ? <div className="pin-entry">{digits.map((digit, index) => (
             <input
               aria-label={`PIN digit ${index + 1}`}
               inputMode="numeric"
@@ -99,7 +149,7 @@ export function AttendanceCheckIn() {
               onKeyDown={(event) => { if (event.key === "Backspace" && !digit) inputs.current[index - 1]?.focus(); }}
             />
           ))}</div> : <div className="scanned-qr-status"><QrCode size={22} /><span>Secure session QR scanned</span></div>}
-          <Button disabled={submitting || !sessionId} onClick={submit}><ShieldCheck size={16} /> {submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
+          <Button disabled={submitting || !sessionId || (usesQr && !qrToken)} onClick={submit}><ShieldCheck size={16} /> {submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
         </div>
       </Card>
       <div className="stack">
@@ -112,7 +162,7 @@ export function AttendanceCheckIn() {
           </div>
           <div style={{ marginTop: 14 }} className="activity-list">
             <div className="activity"><span className="activity__icon"><MapPin size={17} /></span><div><strong>GPS radius</strong><p>{selected?.radiusMetres ?? "—"} metres from the classroom centre</p></div><time>Required</time></div>
-            <div className="activity"><span className="activity__icon"><ShieldCheck size={17} /></span><div><strong>Session verification</strong><p>{qrToken ? "Secure QR token supplied" : "PIN required"}</p></div><time>{qrToken ? "Ready" : "Pending"}</time></div>
+            <div className="activity"><span className="activity__icon"><ShieldCheck size={17} /></span><div><strong>Session verification</strong><p>{qrToken ? "Secure QR token supplied" : usesQr ? "QR scan required" : "PIN required"}</p></div><time>{qrToken ? "Ready" : "Pending"}</time></div>
           </div>
         </Card>
         <div className="alert-card alert-card--warning"><span className="alert-card__icon"><MapPin size={17} /></span><div><h3>Location protection is active</h3><p>Submissions outside the geofence or from mock-location tools will be rejected and flagged.</p></div></div>

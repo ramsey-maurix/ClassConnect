@@ -76,7 +76,14 @@ export class AttendanceService {
           : {};
     return this.prisma.attendanceSession.findMany({
       where: { ...where, status: AttendanceSessionStatus.ACTIVE, expiresAt: { gt: new Date() } },
-      include: { course: true, _count: { select: { records: true } } },
+      include: {
+        course: true,
+        records: {
+          where: { studentId: userId },
+          select: { id: true, status: true, method: true, markedAt: true, distanceMetres: true },
+        },
+        _count: { select: { records: true } },
+      },
       orderBy: { startsAt: "desc" },
     });
   }

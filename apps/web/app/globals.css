@@ -349,6 +349,11 @@ tbody tr:hover td { background: color-mix(in srgb, var(--htu-sky) 52%, transpare
 .in-app-scanner__viewport > button { position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 10px; color: white; background: rgba(7,17,31,.72); }
 .in-app-scanner__frame { position: absolute; inset: 17%; border: 3px solid white; border-radius: 18px; box-shadow: 0 0 0 999px rgba(7,17,31,.32); pointer-events: none; }
 .in-app-scanner__error { margin: 9px 0 0; color: var(--danger); font-size: .64rem; line-height: 1.45; }
+.attendance-success { display: flex; align-items: center; gap: 13px; margin: 18px 0 0; padding: 17px; border: 1px solid rgba(5,150,105,.3); border-radius: 15px; color: #047857; background: #ecfdf5; text-align: left; }
+.attendance-success > svg { flex: 0 0 auto; }
+.attendance-success strong,.attendance-success span { display: block; }
+.attendance-success strong { margin-bottom: 4px; font-size: .8rem; }
+.attendance-success span { font-size: .64rem; line-height: 1.5; }
 .qr-code { width: min(100%,245px); aspect-ratio: 1; display: grid; place-items: center; margin: 0 auto 17px; border: 11px solid white; border-radius: 13px; color: white; background: repeating-conic-gradient(#07111f 0 25%, #fff 0 50%) 0 / 22px 22px; box-shadow: 0 15px 32px rgba(0,0,0,.15); }
 .qr-code span { padding: 7px 9px; border-radius: 7px; background: var(--htu-navy); font-size: .62rem; font-weight: 900; }
 .grade-input { width: 74px; min-height: 35px; border: 1px solid var(--border); border-radius: 9px; padding: 7px; outline: none; color: var(--text); background: var(--surface); text-align: center; font-weight: 600; }

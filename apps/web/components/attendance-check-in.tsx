@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardHeader } from "@classconnect/ui";
-import { Camera, MapPin, QrCode, ShieldCheck, X } from "lucide-react";
+import { Camera, CheckCircle2, MapPin, QrCode, ShieldCheck, X } from "lucide-react";
 import { attendanceApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
 import { useToast } from "./toast-provider";
@@ -13,6 +13,7 @@ type ActiveSession = {
   radiusMetres: number;
   expiresAt: string;
   course: { code: string; title: string };
+  records: Array<{ id: string; status: string; method: string; markedAt: string; distanceMetres: number | string | null }>;
 };
 
 export function AttendanceCheckIn() {
@@ -22,6 +23,7 @@ export function AttendanceCheckIn() {
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [qrToken, setQrToken] = useState("");
+  const [markedSessions, setMarkedSessions] = useState<Record<string, ActiveSession["records"][number]>>({});
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
   const video = useRef<HTMLVideoElement | null>(null);
@@ -36,6 +38,7 @@ export function AttendanceCheckIn() {
       .then((items) => {
         const active = items as ActiveSession[];
         setSessions(active);
+        setMarkedSessions(Object.fromEntries(active.flatMap((item) => item.records[0] ? [[item.id, item.records[0]]] : [])));
         setSessionId(active.some((item) => item.id === scannedSession) ? scannedSession : active[0]?.id ?? "");
       })
       .catch((error) => toast("Active sessions could not be loaded", error instanceof ApiError ? error.message : "Please retry.", "danger"));
@@ -101,13 +104,17 @@ export function AttendanceCheckIn() {
     setSubmitting(true);
     navigator.geolocation.getCurrentPosition(async (position) => {
       try {
-        await attendanceApi.mark({
+        const record = await attendanceApi.mark({
           sessionId,
           ...(qrToken ? { qrToken } : { pin }),
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
-        });
+        }) as ActiveSession["records"][number];
+        setMarkedSessions((current) => ({
+          ...current,
+          [sessionId]: record,
+        }));
         setDigits(["", "", "", ""]);
         setQrToken("");
         window.history.replaceState({}, "", "/student/attendance");
@@ -125,6 +132,7 @@ export function AttendanceCheckIn() {
 
   const selected = sessions.find((item) => item.id === sessionId);
   const usesQr = selected?.method === "QR";
+  const marked = markedSessions[sessionId];
 
   return (
     <div className="grid grid--main">
@@ -133,6 +141,7 @@ export function AttendanceCheckIn() {
         {sessions.length > 1 ? <div className="form-field"><label>Course session</label><select value={sessionId} onChange={(event) => { setSessionId(event.target.value); setQrToken(""); stopScanner(); }}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.course.code} — {session.course.title} ({session.method})</option>)}</select></div> : null}
         <div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location checked on submission</h4><p>Your device must be inside the lecturer’s {selected?.radiusMetres ?? "configured"}-metre classroom geofence.</p></div></div>
         <div style={{ marginTop: 22, textAlign: "center" }}>
+          {marked ? <div className="attendance-success"><CheckCircle2 size={30} /><div><strong>Attendance marked</strong><span>Your {marked.method} submission was recorded as {marked.status.toLowerCase()} at {new Date(marked.markedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</span></div></div> : <>
           <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : usesQr ? "Scan the lecturer’s QR code using the camera inside ClassConnect." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
           {usesQr && !qrToken ? <div className="in-app-scanner">
             {scanning ? <div className="in-app-scanner__viewport"><video ref={video} muted playsInline /><span className="in-app-scanner__frame" /><button type="button" aria-label="Close scanner" onClick={stopScanner}><X size={18} /></button></div> : <div className="in-app-scanner__prompt"><QrCode size={38} /><strong>Scan attendance QR</strong><span>The camera opens here without leaving the student portal.</span><Button onClick={() => void startScanner()}><Camera size={16} /> Open scanner</Button></div>}
@@ -150,6 +159,7 @@ export function AttendanceCheckIn() {
             />
           ))}</div> : <div className="scanned-qr-status"><QrCode size={22} /><span>Secure session QR scanned</span></div>}
           <Button disabled={submitting || !sessionId || (usesQr && !qrToken)} onClick={submit}><ShieldCheck size={16} /> {submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
+          </>}
         </div>
       </Card>
       <div className="stack">

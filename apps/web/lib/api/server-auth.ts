@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import type { SessionUser } from "../types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const API_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 export async function getServerSession(): Promise<SessionUser | null> {
   const cookieStore = await cookies();

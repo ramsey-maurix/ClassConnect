@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Query, Req } from "@nestjs/common"
 import { UserRole } from "@prisma/client";
 import { IsObject } from "class-validator";
 import { Roles } from "../auth/roles.decorator";
+import { Public } from "../auth/public.decorator";
 import type { RequestWithUser } from "../common/request-with-user";
 import { SystemService } from "./system.service";
 
@@ -13,6 +14,12 @@ class UpdateSettingsDto {
 @Controller()
 export class SystemController {
   constructor(private readonly system: SystemService) {}
+
+  @Public()
+  @Get("health")
+  health() {
+    return { status: "ok", service: "classconnect-api", timestamp: new Date().toISOString() };
+  }
 
   @Get("notifications")
   notifications(@Req() request: RequestWithUser) {

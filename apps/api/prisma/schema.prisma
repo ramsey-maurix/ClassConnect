@@ -299,6 +299,7 @@ model AttendanceSession {
   qrTokenHash      String?
   latitude         Decimal?                 @db.Decimal(10, 7)
   longitude        Decimal?                 @db.Decimal(10, 7)
+  locationAccuracy Float?
   radiusMetres     Int                      @default(100)
   startsAt         DateTime
   expiresAt        DateTime

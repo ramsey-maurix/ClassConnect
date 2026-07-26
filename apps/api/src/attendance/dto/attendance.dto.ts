@@ -11,6 +11,10 @@ export class CreateAttendanceSessionDto {
   @IsLongitude()
   longitude!: number;
 
+  @IsNumber()
+  @Min(0)
+  locationAccuracy!: number;
+
   @IsInt()
   @Min(10)
   @Max(1000)

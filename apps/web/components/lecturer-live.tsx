@@ -17,7 +17,7 @@ type Course = {
 };
 type Session = {
   id: string; startsAt: string; expiresAt: string; status: string; radiusMetres: number;
-  latitude?: number | string | null; longitude?: number | string | null; lateAfterMinutes?: number;
+  latitude?: number | string | null; longitude?: number | string | null; locationAccuracy?: number | null; lateAfterMinutes?: number;
   course: { id: string; code: string; title: string };
   records?: Array<{ status: string }>; _count: { records: number };
   pin?: string; qrToken?: string;
@@ -115,7 +115,7 @@ export function LiveCreateSession() {
     setSaving(true);
     navigator.geolocation.getCurrentPosition(async (position) => {
       try {
-        const session = await apiRequest<Session>("/attendance/sessions", { method: "POST", body: JSON.stringify({ courseId, latitude: position.coords.latitude, longitude: position.coords.longitude, radiusMetres: radius, durationMinutes: duration, lateAfterMinutes: late, method }) });
+        const session = await apiRequest<Session>("/attendance/sessions", { method: "POST", body: JSON.stringify({ courseId, latitude: position.coords.latitude, longitude: position.coords.longitude, locationAccuracy: position.coords.accuracy, radiusMetres: radius, durationMinutes: duration, lateAfterMinutes: late, method }) });
         sessionStorage.setItem("classconnect-live-session", session.id);
         if (session.pin) sessionStorage.setItem("classconnect-live-pin", session.pin);
         if (session.qrToken) sessionStorage.setItem("classconnect-live-qr", session.qrToken);
@@ -156,14 +156,18 @@ export function LiveSessionMonitor() {
     }
     setRestarting(true);
     try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 });
+      });
       const durationMinutes = Math.max(5, Math.round((new Date(session.expiresAt).getTime() - new Date(session.startsAt).getTime()) / 60_000));
       const previousQr = sessionStorage.getItem("classconnect-live-qr");
       const created = await apiRequest<Session>("/attendance/sessions", {
         method: "POST",
         body: JSON.stringify({
           courseId: session.course.id,
-          latitude: Number(session.latitude),
-          longitude: Number(session.longitude),
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          locationAccuracy: position.coords.accuracy,
           radiusMetres: session.radiusMetres,
           durationMinutes,
           lateAfterMinutes: session.lateAfterMinutes ?? 5,

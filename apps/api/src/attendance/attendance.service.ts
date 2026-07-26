@@ -11,6 +11,11 @@ export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createSession(dto: CreateAttendanceSessionDto, lecturerId: string, ipAddress?: string) {
+    if (dto.locationAccuracy > Math.max(100, dto.radiusMetres)) {
+      throw new BadRequestException(
+        `Lecturer location is only accurate to ${Math.round(dto.locationAccuracy)}m. Enable precise location or start the session from a GPS-enabled phone.`,
+      );
+    }
     const assignment = await this.prisma.courseLecturer.findUnique({
       where: { courseId_lecturerId: { courseId: dto.courseId, lecturerId } },
       include: { course: true },
@@ -38,6 +43,7 @@ export class AttendanceService {
           qrTokenHash: useQr ? this.digest(qrToken) : null,
           latitude: dto.latitude,
           longitude: dto.longitude,
+          locationAccuracy: dto.locationAccuracy,
           radiusMetres: dto.radiusMetres,
           startsAt,
           expiresAt,
@@ -127,7 +133,12 @@ export class AttendanceService {
       dto.latitude,
       dto.longitude,
     );
-    if (distance > session.radiusMetres) throw new BadRequestException("You are outside the allowed location");
+    const studentAccuracyAllowance = Math.min(dto.accuracy, 25);
+    if (distance > session.radiusMetres + studentAccuracyAllowance) {
+      throw new BadRequestException(
+        `You are ${Math.round(distance)}m from the captured classroom centre; the allowed radius is ${session.radiusMetres}m. Enable precise location and retry.`,
+      );
+    }
 
     const lateAt = new Date(session.startsAt.getTime() + session.lateAfterMinutes * 60_000);
     const suspicious = dto.accuracy > Math.max(100, session.radiusMetres);

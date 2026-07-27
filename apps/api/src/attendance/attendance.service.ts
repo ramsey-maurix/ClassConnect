@@ -142,16 +142,15 @@ export class AttendanceService {
     );
     const lecturerAccuracyAllowance = Math.min(session.locationAccuracy ?? 0, 100);
     const studentAccuracyAllowance = Math.min(dto.accuracy, 100);
-    const maximumPlausibleDistance = session.radiusMetres + lecturerAccuracyAllowance + studentAccuracyAllowance;
-    if (distance > maximumPlausibleDistance) {
+    const effectiveDistance = Math.max(0, distance - lecturerAccuracyAllowance - studentAccuracyAllowance);
+    if (effectiveDistance > session.radiusMetres + 50) {
       throw new BadRequestException(
-        `You are ${Math.round(distance)}m from the captured classroom centre; the allowed radius is ${session.radiusMetres}m and the GPS readings do not overlap it. Enable precise location and retry.`,
+        `Your accuracy-adjusted distance is ${Math.round(effectiveDistance)}m; the allowed radius is ${session.radiusMetres}m. Enable precise location and retry.`,
       );
     }
 
     const lateAt = new Date(session.startsAt.getTime() + session.lateAfterMinutes * 60_000);
-    const outsideStrictRadius = distance > session.radiusMetres;
-    const suspicious = outsideStrictRadius || dto.accuracy > Math.max(100, session.radiusMetres);
+    const suspicious = effectiveDistance > session.radiusMetres || dto.accuracy > 100;
     const status = suspicious
       ? AttendanceStatus.FLAGGED
       : new Date() > lateAt
@@ -168,7 +167,7 @@ export class AttendanceService {
         accuracy: dto.accuracy,
         distanceMetres: distance,
         flaggedReason: suspicious
-          ? `GPS uncertainty review: measured ${Math.round(distance)}m, radius ${session.radiusMetres}m, lecturer accuracy ${Math.round(session.locationAccuracy ?? 0)}m, student accuracy ${Math.round(dto.accuracy)}m; ${userAgent ?? "unknown device"}`
+          ? `GPS review: measured ${Math.round(distance)}m, adjusted ${Math.round(effectiveDistance)}m, radius ${session.radiusMetres}m, lecturer accuracy ${Math.round(session.locationAccuracy ?? 0)}m, student accuracy ${Math.round(dto.accuracy)}m; ${userAgent ?? "unknown device"}`
           : null,
       },
     });

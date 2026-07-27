@@ -8,6 +8,7 @@ import { AlertTriangle, BookOpenText, CheckCircle2, ClipboardCheck, Maximize2, P
 import { QRCodeSVG } from "qrcode.react";
 import { Avatar, Badge, Button, Card, CardHeader, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
+import { getBestGeolocation } from "@/lib/geolocation";
 import { useToast } from "./toast-provider";
 
 type Course = {
@@ -113,8 +114,8 @@ export function LiveCreateSession() {
   async function submit(event: FormEvent) {
     event.preventDefault(); if (!courseId) return;
     setSaving(true);
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      try {
+    try {
+        const position = await getBestGeolocation();
         const session = await apiRequest<Session>("/attendance/sessions", { method: "POST", body: JSON.stringify({ courseId, latitude: position.coords.latitude, longitude: position.coords.longitude, locationAccuracy: position.coords.accuracy, radiusMetres: radius, durationMinutes: duration, lateAfterMinutes: late, method }) });
         sessionStorage.setItem("classconnect-live-session", session.id);
         sessionStorage.removeItem("classconnect-live-pin");
@@ -122,8 +123,9 @@ export function LiveCreateSession() {
         if (session.pin) sessionStorage.setItem("classconnect-live-pin", session.pin);
         if (session.qrToken) sessionStorage.setItem("classconnect-live-qr", session.qrToken);
         toast("Attendance session started", `${session.course.code} is now accepting ${method} submissions.`, "success"); router.push("/lecturer/attendance/live");
-      } catch (error) { toast("Session could not be started", message(error), "danger"); } finally { setSaving(false); }
-    }, () => { setSaving(false); toast("Location is required", "Allow location access to create the classroom geofence.", "danger"); }, { enableHighAccuracy: true });
+    } catch (error) {
+      toast("Session could not be started", error instanceof ApiError ? error.message : "Allow precise location and keep the page open while ClassConnect collects GPS readings.", "danger");
+    } finally { setSaving(false); }
   }
   if (!courses.length) return <Empty>You need an assigned course before starting attendance.</Empty>;
   return <div className="grid grid--main"><Card><CardHeader title="Session configuration" description="The browser will use your current location as the classroom centre" /><form onSubmit={submit}><div className="form-grid"><div className="form-field"><label>Assigned course</label><select value={courseId} onChange={(event) => setCourseId(event.target.value)}>{courses.map((course) => <option value={course.id} key={course.id}>{course.code} — {course.title}</option>)}</select></div><div className="form-field"><label>Verification method</label><select value={method} onChange={(event) => setMethod(event.target.value)}><option value="PIN">PIN</option><option value="QR">QR code</option></select></div><div className="form-field"><label>Duration</label><select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={10}>10 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></div><div className="form-field"><label>Allowed radius</label><select value={radius} onChange={(event) => setRadius(Number(event.target.value))}><option value={25}>25 metres</option><option value={50}>50 metres</option><option value={75}>75 metres</option><option value={100}>100 metres</option></select></div><div className="form-field"><label>Mark late after</label><select value={late} onChange={(event) => setLate(Number(event.target.value))}><option value={0}>Immediately</option><option value={5}>5 minutes</option><option value={10}>10 minutes</option><option value={15}>15 minutes</option></select></div></div><div className="form-actions"><Button disabled={saving} type="submit"><Play size={16} /> {saving ? "Starting…" : "Start session"}</Button></div></form></Card><Card><CardHeader title="Geofence protection" description="Students must be registered for the course and physically inside this radius" /><div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location captured on start</h4><p>For the best result, start the session from inside the classroom and allow precise location access.</p></div></div></Card></div>;
@@ -158,9 +160,7 @@ export function LiveSessionMonitor() {
     }
     setRestarting(true);
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 });
-      });
+      const position = await getBestGeolocation();
       const durationMinutes = Math.max(5, Math.round((new Date(session.expiresAt).getTime() - new Date(session.startsAt).getTime()) / 60_000));
       const created = await apiRequest<Session>("/attendance/sessions", {
         method: "POST",

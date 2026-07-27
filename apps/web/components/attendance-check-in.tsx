@@ -5,6 +5,7 @@ import { Badge, Button, Card, CardHeader } from "@classconnect/ui";
 import { Camera, CheckCircle2, MapPin, QrCode, ShieldCheck, X } from "lucide-react";
 import { attendanceApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
+import { getBestGeolocation } from "@/lib/geolocation";
 import { useToast } from "./toast-provider";
 
 type ActiveSession = {
@@ -91,7 +92,7 @@ export function AttendanceCheckIn() {
     if (digit) inputs.current[index + 1]?.focus();
   }
 
-  function submit() {
+  async function submit() {
     const pin = digits.join("");
     if (!sessionId) {
       toast("No active session", "Ask your lecturer to start an attendance session.", "warning");
@@ -102,32 +103,29 @@ export function AttendanceCheckIn() {
       return;
     }
     setSubmitting(true);
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      try {
-        const record = await attendanceApi.mark({
-          sessionId,
-          ...(qrToken ? { qrToken } : { pin }),
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        }) as ActiveSession["records"][number];
-        setMarkedSessions((current) => ({
-          ...current,
-          [sessionId]: record,
-        }));
-        setDigits(["", "", "", ""]);
-        setQrToken("");
-        window.history.replaceState({}, "", "/student/attendance");
-        toast("Attendance marked", `${sessions.find((item) => item.id === sessionId)?.course.code ?? "Class"} · GPS and session checks passed.`, "success");
-      } catch (error) {
-        toast("Attendance not verified", error instanceof ApiError ? error.message : "Please retry.", "danger");
-      } finally {
-        setSubmitting(false);
-      }
-    }, () => {
+    try {
+      const position = await getBestGeolocation();
+      const record = await attendanceApi.mark({
+        sessionId,
+        ...(qrToken ? { qrToken } : { pin }),
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      }) as ActiveSession["records"][number];
+      setMarkedSessions((current) => ({ ...current, [sessionId]: record }));
+      setDigits(["", "", "", ""]);
+      setQrToken("");
+      window.history.replaceState({}, "", "/student/attendance");
+      toast("Attendance marked", `${sessions.find((item) => item.id === sessionId)?.course.code ?? "Class"} · GPS and session checks passed.`, "success");
+    } catch (error) {
+      toast(
+        "Attendance not verified",
+        error instanceof ApiError ? error.message : "Allow precise location and keep the page open while ClassConnect collects GPS readings.",
+        "danger",
+      );
+    } finally {
       setSubmitting(false);
-      toast("Location is required", "Allow precise location access to verify the classroom geofence.", "danger");
-    }, { enableHighAccuracy: true });
+    }
   }
 
   const selected = sessions.find((item) => item.id === sessionId);

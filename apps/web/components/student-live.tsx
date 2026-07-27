@@ -8,6 +8,7 @@ import { ApiError, apiRequest, authApi } from "@/lib/api/client";
 import type { SessionUser } from "@/lib/types";
 import { useToast } from "./toast-provider";
 import { AttendanceCheckIn } from "./attendance-check-in";
+import { NotificationCentre } from "./notification-centre";
 
 type Course = {
   id: string; code: string; title: string; creditHours: number; status: string;
@@ -108,11 +109,7 @@ export function LiveStudentTimetable() {
 }
 
 export function LiveStudentNotifications() {
-  const { toast } = useToast(); const [items, setItems] = useState<Notification[]>([]);
-  async function load() { try { setItems(await apiRequest<Notification[]>("/notifications")); } catch (error) { toast("Notifications could not be loaded", errorMessage(error), "danger"); } }
-  useEffect(() => { void load(); }, []);
-  async function readAll() { try { await apiRequest("/notifications/read-all", { method: "PATCH" }); await load(); window.dispatchEvent(new Event("classconnect:notifications-updated")); toast("Notifications updated", "All notifications are marked as read.", "success"); } catch (error) { toast("Notifications could not be updated", errorMessage(error), "danger"); } }
-  return <div className="stack"><div className="page-header page-header--actions"><div className="page-header__actions"><Button variant="secondary" onClick={() => void readAll()}>Mark all as read</Button></div></div><Card><div className="activity-list">{items.map((item) => <div className="activity" key={item.id}><span className="activity__icon">{item.type.includes("RISK") || item.type.includes("WARNING") ? <AlertTriangle size={17} /> : item.type.includes("GRADE") ? <GraduationCap size={17} /> : <Bell size={17} />}</span><div><strong>{item.title}</strong><p>{item.message}</p></div><time>{new Date(item.createdAt).toLocaleDateString()}</time></div>)}{!items.length ? <p className="selection-empty">You have no notifications.</p> : null}</div></Card></div>;
+  return <NotificationCentre />;
 }
 
 export function LiveStudentProfile() {

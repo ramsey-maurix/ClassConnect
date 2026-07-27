@@ -9,6 +9,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Avatar, Badge, Button, Card, CardHeader, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import { getBestGeolocation } from "@/lib/geolocation";
+import { NotificationCentre } from "./notification-centre";
 import { useToast } from "./toast-provider";
 
 type Course = {
@@ -343,9 +344,5 @@ export function LiveLecturerStudents() {
 }
 
 export function LiveLecturerNotifications() {
-  const { toast } = useToast(); const [items, setItems] = useState<Notification[]>([]);
-  async function load() { try { setItems(await apiRequest<Notification[]>("/notifications")); } catch (error) { toast("Notifications could not be loaded", message(error), "danger"); } }
-  useEffect(() => { void load(); }, []);
-  async function readAll() { try { await apiRequest("/notifications/read-all", { method: "PATCH" }); await load(); window.dispatchEvent(new Event("classconnect:notifications-updated")); toast("Notifications updated", "All notifications are marked as read.", "success"); } catch (error) { toast("Notifications could not be updated", message(error), "danger"); } }
-  return <div className="stack"><div className="page-header page-header--actions"><div className="page-header__actions"><Button variant="secondary" onClick={() => void readAll()}>Mark all as read</Button></div></div><Card><div className="activity-list">{items.map((item) => <div className="activity" key={item.id}><span className="activity__icon">{item.type.includes("RISK") || item.type.includes("FLAG") ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}</span><div><strong>{item.title}</strong><p>{item.message}</p></div><time>{new Date(item.createdAt).toLocaleDateString()}</time></div>)}{!items.length ? <p className="selection-empty">You have no notifications.</p> : null}</div></Card></div>;
+  return <NotificationCentre />;
 }

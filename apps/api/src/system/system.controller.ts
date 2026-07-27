@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Query, Req } from "@nestjs/common";
 import { UserRole } from "@prisma/client";
 import { ApiCookieAuth, ApiParam, ApiProperty, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { IsObject } from "class-validator";
@@ -45,6 +45,12 @@ export class SystemController {
   @ApiParam({ name: "id", description: "Notification ID" })
   read(@Param("id") id: string, @Req() request: RequestWithUser) {
     return this.system.readNotification(id, request.user.sub);
+  }
+
+  @Delete("notifications")
+  @ApiCookieAuth("classconnect_access")
+  deleteAllNotifications(@Req() request: RequestWithUser) {
+    return this.system.deleteAllNotifications(request.user.sub);
   }
 
   @Get("analytics/student")

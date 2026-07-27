@@ -21,6 +21,10 @@ export class SystemService {
     return this.prisma.notification.update({ where: { id }, data: { readAt: new Date() } });
   }
 
+  deleteAllNotifications(userId: string) {
+    return this.prisma.notification.deleteMany({ where: { userId } });
+  }
+
   async studentAnalytics(studentId: string) {
     const [standing, risks, grades, attendance] = await Promise.all([
       this.prisma.academicStanding.findUnique({ where: { studentId } }),

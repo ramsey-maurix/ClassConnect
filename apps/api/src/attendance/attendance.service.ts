@@ -135,6 +135,11 @@ export class AttendanceService {
       && [session.qrTokenHash, session.previousQrTokenHash].includes(this.digest(dto.qrToken))
     ) method = AttendanceMethod.QR;
     else throw new BadRequestException(dto.pin ? "Invalid PIN" : "Invalid QR code");
+    if (method === AttendanceMethod.QR && !/Android|iPhone|iPad|iPod|Mobile/i.test(userAgent ?? "")) {
+      throw new BadRequestException(
+        "QR attendance must be completed on a mobile phone. Open ClassConnect on your phone and scan the lecturer's QR code.",
+      );
+    }
 
     if (session.latitude === null || session.longitude === null) throw new BadRequestException("Session location is unavailable");
     const distance = this.distanceMetres(

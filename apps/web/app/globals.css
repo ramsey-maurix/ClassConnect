@@ -375,6 +375,12 @@ tbody tr:hover td { background: color-mix(in srgb, var(--htu-sky) 52%, transpare
 .notification-item__content span { color: var(--muted); font-size: .63rem; line-height: 1.5; }
 .notification-item time { color: var(--muted); font-size: .58rem; white-space: nowrap; }
 .notification-item__unread { position: absolute; top: 8px; right: 10px; color: var(--htu-blue); font-size: .5rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.qr-phone-required { display: flex; gap: 14px; align-items: flex-start; margin: 18px auto; width: min(100%,520px); padding: 18px; border: 1px solid rgba(0,71,173,.25); border-radius: 15px; color: var(--htu-blue); background: var(--htu-sky); text-align: left; }
+.qr-phone-required > svg { flex: 0 0 auto; margin-top: 2px; }
+.qr-phone-required strong,.qr-phone-required span,.qr-phone-required small { display: block; }
+.qr-phone-required strong { margin-bottom: 6px; color: var(--text); font-size: .82rem; }
+.qr-phone-required span { color: var(--muted); font-size: .65rem; line-height: 1.55; }
+.qr-phone-required small { margin-top: 9px; color: var(--htu-blue); font-size: .59rem; line-height: 1.5; }
 @media (max-width: 640px) {
   .notification-item { grid-template-columns: 38px minmax(0,1fr); }
   .notification-item time { grid-column: 2; }

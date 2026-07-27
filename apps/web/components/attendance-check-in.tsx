@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardHeader } from "@classconnect/ui";
-import { Camera, CheckCircle2, MapPin, QrCode, ShieldCheck, X } from "lucide-react";
+import { Camera, CheckCircle2, MapPin, QrCode, ShieldCheck, Smartphone, X } from "lucide-react";
 import { attendanceApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
 import { getBestGeolocation } from "@/lib/geolocation";
@@ -24,6 +24,7 @@ export function AttendanceCheckIn() {
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [qrToken, setQrToken] = useState("");
+  const [isMobileDevice, setIsMobileDevice] = useState<boolean | null>(null);
   const [markedSessions, setMarkedSessions] = useState<Record<string, ActiveSession["records"][number]>>({});
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
@@ -32,6 +33,7 @@ export function AttendanceCheckIn() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    setIsMobileDevice(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
     const params = new URLSearchParams(window.location.search);
     const scannedSession = params.get("session") ?? "";
     setQrToken(params.get("token") ?? "");
@@ -130,6 +132,7 @@ export function AttendanceCheckIn() {
 
   const selected = sessions.find((item) => item.id === sessionId);
   const usesQr = selected?.method === "QR";
+  const qrLockedOnLaptop = usesQr && isMobileDevice === false;
   const marked = markedSessions[sessionId];
 
   return (
@@ -140,8 +143,8 @@ export function AttendanceCheckIn() {
         <div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location checked on submission</h4><p>Your device must be inside the lecturer’s {selected?.radiusMetres ?? "configured"}-metre classroom geofence.</p></div></div>
         <div style={{ marginTop: 22, textAlign: "center" }}>
           {marked ? <div className="attendance-success"><CheckCircle2 size={30} /><div><strong>Attendance marked</strong><span>Your {marked.method} submission was recorded as {marked.status.toLowerCase()} at {new Date(marked.markedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</span></div></div> : <>
-          <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : usesQr ? "Scan the lecturer’s QR code using the camera inside ClassConnect." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
-          {usesQr && !qrToken ? <div className="in-app-scanner">
+          <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : qrLockedOnLaptop ? "This QR attendance session must be completed on a mobile phone." : usesQr ? "Scan the lecturer’s QR code using the camera inside ClassConnect." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
+          {qrLockedOnLaptop && !marked ? <div className="qr-phone-required"><Smartphone size={34} /><div><strong>Continue on your phone</strong><span>This class is using QR attendance. For secure camera scanning and location verification, open ClassConnect on your phone, go to Attendance, and scan the QR code displayed by your lecturer. QR attendance cannot be submitted from a laptop.</span><small>If the lecturer starts a PIN session instead, you can enter the PIN on this laptop.</small></div></div> : usesQr && !qrToken ? <div className="in-app-scanner">
             {scanning ? <div className="in-app-scanner__viewport"><video ref={video} muted playsInline /><span className="in-app-scanner__frame" /><button type="button" aria-label="Close scanner" onClick={stopScanner}><X size={18} /></button></div> : <div className="in-app-scanner__prompt"><QrCode size={38} /><strong>Scan attendance QR</strong><span>The camera opens here without leaving the student portal.</span><Button onClick={() => void startScanner()}><Camera size={16} /> Open scanner</Button></div>}
             {scanError ? <p className="in-app-scanner__error">{scanError}</p> : null}
           </div> : !qrToken ? <div className="pin-entry">{digits.map((digit, index) => (
@@ -156,7 +159,7 @@ export function AttendanceCheckIn() {
               onKeyDown={(event) => { if (event.key === "Backspace" && !digit) inputs.current[index - 1]?.focus(); }}
             />
           ))}</div> : <div className="scanned-qr-status"><QrCode size={22} /><span>Secure session QR scanned</span></div>}
-          <Button disabled={submitting || !sessionId || (usesQr && !qrToken)} onClick={submit}><ShieldCheck size={16} /> {submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
+          <Button disabled={submitting || !sessionId || qrLockedOnLaptop || (usesQr && !qrToken)} onClick={submit}><ShieldCheck size={16} /> {qrLockedOnLaptop ? "Continue on your phone" : submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
           </>}
         </div>
       </Card>

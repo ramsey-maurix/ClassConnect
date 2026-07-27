@@ -354,6 +354,13 @@ tbody tr:hover td { background: color-mix(in srgb, var(--htu-sky) 52%, transpare
 .attendance-success strong,.attendance-success span { display: block; }
 .attendance-success strong { margin-bottom: 4px; font-size: .8rem; }
 .attendance-success span { font-size: .64rem; line-height: 1.5; }
+.review-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; margin-bottom: 14px; }
+.review-summary > div { padding: 11px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-soft); }
+.review-summary span,.review-summary strong { display: block; }
+.review-summary span { margin-bottom: 4px; color: var(--muted); font-size: .58rem; }
+.review-summary strong { font-size: .7rem; }
+.modal textarea { width: 100%; resize: vertical; border: 1px solid var(--border); border-radius: 12px; padding: 12px; color: var(--text); background: var(--surface); font: inherit; font-size: .7rem; line-height: 1.5; outline: none; }
+.modal textarea:focus { border-color: var(--htu-blue); box-shadow: 0 0 0 4px rgba(0,71,173,.08); }
 .qr-code { width: min(100%,245px); aspect-ratio: 1; display: grid; place-items: center; margin: 0 auto 17px; border: 11px solid white; border-radius: 13px; color: white; background: repeating-conic-gradient(#07111f 0 25%, #fff 0 50%) 0 / 22px 22px; box-shadow: 0 15px 32px rgba(0,0,0,.15); }
 .qr-code span { padding: 7px 9px; border-radius: 7px; background: var(--htu-navy); font-size: .62rem; font-weight: 900; }
 .grade-input { width: 74px; min-height: 35px; border: 1px solid var(--border); border-radius: 9px; padding: 7px; outline: none; color: var(--text); background: var(--surface); text-align: center; font-weight: 600; }

@@ -142,12 +142,18 @@ export function LiveSessionMonitor() {
   const [reviewReason, setReviewReason] = useState("");
   const [savingReview, setSavingReview] = useState(false);
   const [liveQrToken, setLiveQrToken] = useState("");
+  const [livePin, setLivePin] = useState("");
   const [qrRefreshSeconds, setQrRefreshSeconds] = useState(20);
   async function load() {
     try {
-      let id = sessionStorage.getItem("classconnect-live-session");
-      if (!id) id = (await apiRequest<Session[]>("/attendance/sessions/active"))[0]?.id ?? null;
-      if (id) setSession(await apiRequest<LiveSession>(`/attendance/sessions/${id}`));
+      const activeSessions = await apiRequest<Session[]>("/attendance/sessions/active");
+      const storedId = sessionStorage.getItem("classconnect-live-session");
+      const activeId = activeSessions.some((item) => item.id === storedId) ? storedId : activeSessions[0]?.id;
+      const id = activeId ?? storedId;
+      if (id) {
+        sessionStorage.setItem("classconnect-live-session", id);
+        setSession(await apiRequest<LiveSession>(`/attendance/sessions/${id}`));
+      }
     } catch (error) { toast("Live session could not be loaded", message(error), "danger"); }
   }
   useEffect(() => { void load(); const timer = setInterval(() => void load(), 5000); return () => clearInterval(timer); }, []);
@@ -180,6 +186,28 @@ export function LiveSessionMonitor() {
       window.clearInterval(rotationTimer);
       window.clearInterval(countdownTimer);
     };
+  }, [session?.id, session?.method, session?.status]);
+  useEffect(() => {
+    if (!session || session.method !== "PIN" || session.status !== "ACTIVE") {
+      setLivePin("");
+      return;
+    }
+    const storedPin = sessionStorage.getItem("classconnect-live-pin") ?? "";
+    if (storedPin) {
+      setLivePin(storedPin);
+      return;
+    }
+    let cancelled = false;
+    apiRequest<{ pin: string }>(`/attendance/sessions/${session.id}/pin/reissue`, { method: "POST" })
+      .then((result) => {
+        if (cancelled) return;
+        sessionStorage.setItem("classconnect-live-pin", result.pin);
+        setLivePin(result.pin);
+      })
+      .catch((error) => {
+        if (!cancelled) toast("Session PIN could not be loaded", message(error), "danger");
+      });
+    return () => { cancelled = true; };
   }, [session?.id, session?.method, session?.status]);
   useEffect(() => {
     if (!projecting) return;
@@ -238,7 +266,10 @@ export function LiveSessionMonitor() {
       sessionStorage.setItem("classconnect-live-session", created.id);
       sessionStorage.removeItem("classconnect-live-pin");
       sessionStorage.removeItem("classconnect-live-qr");
-      if (created.pin) sessionStorage.setItem("classconnect-live-pin", created.pin);
+      if (created.pin) {
+        sessionStorage.setItem("classconnect-live-pin", created.pin);
+        setLivePin(created.pin);
+      }
       if (created.qrToken) {
         sessionStorage.setItem("classconnect-live-qr", created.qrToken);
         setLiveQrToken(created.qrToken);
@@ -250,7 +281,7 @@ export function LiveSessionMonitor() {
     finally { setRestarting(false); }
   }
   if (!session) return <Empty>There is no active attendance session. Start one from the Attendance page.</Empty>;
-  const pin = session.method === "PIN" && typeof window !== "undefined" ? sessionStorage.getItem("classconnect-live-pin") : null;
+  const pin = session.method === "PIN" ? livePin : null;
   const qrToken = liveQrToken;
   const qrValue = liveQrToken && typeof window !== "undefined" ? `${window.location.origin}/student/attendance?session=${encodeURIComponent(session.id)}&token=${encodeURIComponent(liveQrToken)}` : "";
   const remainingSeconds = Math.max(0, Math.ceil((new Date(session.expiresAt).getTime() - now) / 1000));

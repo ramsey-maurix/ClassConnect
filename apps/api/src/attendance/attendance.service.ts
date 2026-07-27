@@ -229,6 +229,23 @@ export class AttendanceService {
     return { qrToken, rotatesInSeconds: 20 };
   }
 
+  async reissuePin(id: string, lecturerId: string) {
+    const session = await this.prisma.attendanceSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException("Attendance session not found");
+    if (session.lecturerId !== lecturerId) throw new ForbiddenException("Only the session lecturer can reissue its PIN");
+    if (session.status !== AttendanceSessionStatus.ACTIVE || session.expiresAt <= new Date()) {
+      throw new BadRequestException("Attendance session is no longer active");
+    }
+    if (session.method !== AttendanceMethod.PIN) throw new BadRequestException("This is not a PIN attendance session");
+
+    const pin = randomInt(1000, 10_000).toString();
+    await this.prisma.attendanceSession.update({
+      where: { id },
+      data: { pinHash: await hash(pin, 10) },
+    });
+    return { pin };
+  }
+
   history(studentId: string) {
     return this.prisma.attendanceRecord.findMany({
       where: { studentId },

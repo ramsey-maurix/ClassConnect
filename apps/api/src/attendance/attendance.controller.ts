@@ -69,6 +69,13 @@ export class AttendanceController {
     return this.attendance.rotateQrToken(id, request.user.sub);
   }
 
+  @Roles(UserRole.LECTURER)
+  @Post("sessions/:id/pin/reissue")
+  @ApiParam({ name: "id", description: "PIN attendance session ID" })
+  reissuePin(@Param("id") id: string, @Req() request: RequestWithUser) {
+    return this.attendance.reissuePin(id, request.user.sub);
+  }
+
   @Roles(UserRole.LECTURER, UserRole.ADMIN)
   @Get("sessions/:id/records")
   @ApiParam({ name: "id", description: "Attendance session ID" })

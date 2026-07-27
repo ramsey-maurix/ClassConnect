@@ -130,7 +130,10 @@ export class AttendanceService {
 
     let method: AttendanceMethod;
     if (dto.pin && session.pinHash && await compare(dto.pin, session.pinHash)) method = AttendanceMethod.PIN;
-    else if (dto.qrToken && session.qrTokenHash === this.digest(dto.qrToken)) method = AttendanceMethod.QR;
+    else if (
+      dto.qrToken
+      && [session.qrTokenHash, session.previousQrTokenHash].includes(this.digest(dto.qrToken))
+    ) method = AttendanceMethod.QR;
     else throw new BadRequestException(dto.pin ? "Invalid PIN" : "Invalid QR code");
 
     if (session.latitude === null || session.longitude === null) throw new BadRequestException("Session location is unavailable");
@@ -204,6 +207,26 @@ export class AttendanceService {
 
   cancel(id: string, lecturerId: string) {
     return this.setSessionStatus(id, lecturerId, AttendanceSessionStatus.CANCELLED);
+  }
+
+  async rotateQrToken(id: string, lecturerId: string) {
+    const session = await this.prisma.attendanceSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException("Attendance session not found");
+    if (session.lecturerId !== lecturerId) throw new ForbiddenException("Only the session lecturer can rotate its QR code");
+    if (session.status !== AttendanceSessionStatus.ACTIVE || session.expiresAt <= new Date()) {
+      throw new BadRequestException("Attendance session is no longer active");
+    }
+    if (session.method !== AttendanceMethod.QR) throw new BadRequestException("This is not a QR attendance session");
+
+    const qrToken = randomBytes(32).toString("base64url");
+    await this.prisma.attendanceSession.update({
+      where: { id },
+      data: {
+        previousQrTokenHash: session.qrTokenHash,
+        qrTokenHash: this.digest(qrToken),
+      },
+    });
+    return { qrToken, rotatesInSeconds: 20 };
   }
 
   history(studentId: string) {

@@ -141,6 +141,8 @@ export function LiveSessionMonitor() {
   const [reviewStatus, setReviewStatus] = useState("PRESENT");
   const [reviewReason, setReviewReason] = useState("");
   const [savingReview, setSavingReview] = useState(false);
+  const [liveQrToken, setLiveQrToken] = useState("");
+  const [qrRefreshSeconds, setQrRefreshSeconds] = useState(20);
   async function load() {
     try {
       let id = sessionStorage.getItem("classconnect-live-session");
@@ -150,6 +152,35 @@ export function LiveSessionMonitor() {
   }
   useEffect(() => { void load(); const timer = setInterval(() => void load(), 5000); return () => clearInterval(timer); }, []);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    if (!session || session.method !== "QR" || session.status !== "ACTIVE") {
+      setLiveQrToken("");
+      return;
+    }
+    let cancelled = false;
+    const storedToken = sessionStorage.getItem("classconnect-live-qr") ?? "";
+    setLiveQrToken(storedToken);
+    setQrRefreshSeconds(20);
+    const rotate = async () => {
+      try {
+        const result = await apiRequest<{ qrToken: string; rotatesInSeconds: number }>(`/attendance/sessions/${session.id}/qr/rotate`, { method: "POST" });
+        if (cancelled) return;
+        sessionStorage.setItem("classconnect-live-qr", result.qrToken);
+        setLiveQrToken(result.qrToken);
+        setQrRefreshSeconds(result.rotatesInSeconds);
+      } catch (error) {
+        if (!cancelled) toast("QR code could not be refreshed", message(error), "danger");
+      }
+    };
+    if (!storedToken) void rotate();
+    const rotationTimer = window.setInterval(() => void rotate(), 20_000);
+    const countdownTimer = window.setInterval(() => setQrRefreshSeconds((value) => value <= 1 ? 20 : value - 1), 1_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(rotationTimer);
+      window.clearInterval(countdownTimer);
+    };
+  }, [session?.id, session?.method, session?.status]);
   useEffect(() => {
     if (!projecting) return;
     const previousOverflow = document.body.style.overflow;
@@ -208,7 +239,10 @@ export function LiveSessionMonitor() {
       sessionStorage.removeItem("classconnect-live-pin");
       sessionStorage.removeItem("classconnect-live-qr");
       if (created.pin) sessionStorage.setItem("classconnect-live-pin", created.pin);
-      if (created.qrToken) sessionStorage.setItem("classconnect-live-qr", created.qrToken);
+      if (created.qrToken) {
+        sessionStorage.setItem("classconnect-live-qr", created.qrToken);
+        setLiveQrToken(created.qrToken);
+      }
       setNow(Date.now());
       await load();
       toast("Session restarted", `${created.course.code} is accepting attendance with a fresh ${created.qrToken ? "QR code" : "PIN"}.`, "success");
@@ -217,8 +251,8 @@ export function LiveSessionMonitor() {
   }
   if (!session) return <Empty>There is no active attendance session. Start one from the Attendance page.</Empty>;
   const pin = session.method === "PIN" && typeof window !== "undefined" ? sessionStorage.getItem("classconnect-live-pin") : null;
-  const qrToken = session.method === "QR" && typeof window !== "undefined" ? sessionStorage.getItem("classconnect-live-qr") : null;
-  const qrValue = qrToken && typeof window !== "undefined" ? `${window.location.origin}/student/attendance?session=${encodeURIComponent(session.id)}&token=${encodeURIComponent(qrToken)}` : "";
+  const qrToken = liveQrToken;
+  const qrValue = liveQrToken && typeof window !== "undefined" ? `${window.location.origin}/student/attendance?session=${encodeURIComponent(session.id)}&token=${encodeURIComponent(liveQrToken)}` : "";
   const remainingSeconds = Math.max(0, Math.ceil((new Date(session.expiresAt).getTime() - now) / 1000));
   const configuredSeconds = Math.max(0, Math.round((new Date(session.expiresAt).getTime() - new Date(session.startsAt).getTime()) / 1000));
   const displayedSeconds = session.status === "ACTIVE" ? remainingSeconds : configuredSeconds;

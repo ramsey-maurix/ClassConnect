@@ -297,6 +297,7 @@ model AttendanceSession {
   method           AttendanceMethod
   pinHash          String?
   qrTokenHash      String?
+  previousQrTokenHash String?
   latitude         Decimal?                 @db.Decimal(10, 7)
   longitude        Decimal?                 @db.Decimal(10, 7)
   locationAccuracy Float?

@@ -62,6 +62,13 @@ export class AttendanceController {
     return this.attendance.cancel(id, request.user.sub);
   }
 
+  @Roles(UserRole.LECTURER)
+  @Post("sessions/:id/qr/rotate")
+  @ApiParam({ name: "id", description: "QR attendance session ID" })
+  rotateQr(@Param("id") id: string, @Req() request: RequestWithUser) {
+    return this.attendance.rotateQrToken(id, request.user.sub);
+  }
+
   @Roles(UserRole.LECTURER, UserRole.ADMIN)
   @Get("sessions/:id/records")
   @ApiParam({ name: "id", description: "Attendance session ID" })

@@ -12,10 +12,24 @@ type ActiveSession = {
   id: string;
   method: "PIN" | "QR";
   radiusMetres: number;
+  startsAt: string;
   expiresAt: string;
+  lateAfterMinutes: number;
   course: { code: string; title: string };
   records: Array<{ id: string; status: string; method: string; markedAt: string; distanceMetres: number | string | null }>;
 };
+
+function attendanceError(error: unknown) {
+  const message =
+    error instanceof ApiError ? error.message : "Attendance could not be verified.";
+  if (/invalid pin/i.test(message)) return "The PIN is incorrect. Check the four digits displayed by your lecturer and try again.";
+  if (/invalid qr|expired/i.test(message)) return "This QR code has expired. Scan the newest QR code currently displayed by your lecturer.";
+  if (/already marked/i.test(message)) return "Your attendance has already been recorded for this session.";
+  if (/accuracy|precise location/i.test(message)) return "Your GPS reading is not accurate enough. Enable precise location, move near a window if necessary, and try again.";
+  if (/distance|radius|outside/i.test(message)) return "Your device appears to be outside the classroom attendance area. Move inside the classroom and retry with precise location enabled.";
+  if (/mobile phone/i.test(message)) return "QR attendance must be completed on your phone. Open ClassConnect on the phone and scan again.";
+  return message;
+}
 
 export function AttendanceCheckIn() {
   const { toast } = useToast();
@@ -31,6 +45,12 @@ export function AttendanceCheckIn() {
   const video = useRef<HTMLVideoElement | null>(null);
   const scanner = useRef<{ stop: () => void } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setIsMobileDevice(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
@@ -122,7 +142,7 @@ export function AttendanceCheckIn() {
     } catch (error) {
       toast(
         "Attendance not verified",
-        error instanceof ApiError ? error.message : "Allow precise location and keep the page open while ClassConnect collects GPS readings.",
+        attendanceError(error),
         "danger",
       );
     } finally {
@@ -134,19 +154,35 @@ export function AttendanceCheckIn() {
   const usesQr = selected?.method === "QR";
   const qrLockedOnLaptop = usesQr && isMobileDevice === false;
   const marked = markedSessions[sessionId];
+  const lateAt = selected
+    ? new Date(selected.startsAt).getTime() + selected.lateAfterMinutes * 60_000
+    : 0;
+  const expiresAt = selected ? new Date(selected.expiresAt).getTime() : 0;
+  const remainingSeconds = selected
+    ? Math.max(0, Math.ceil((expiresAt - now) / 1000))
+    : 0;
+  const phase = !selected
+    ? "WAITING"
+    : now >= expiresAt
+      ? "CLOSED"
+      : now >= lateAt
+        ? "LATE"
+        : "PRESENT";
+  const countdown = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
 
   return (
     <div className="grid grid--main">
       <Card>
         <CardHeader title="Active class session" description={selected ? `${selected.course.code} — ${selected.course.title}` : "No active session available"} action={selected ? <Badge tone="success">● Live now</Badge> : <Badge tone="neutral">Waiting</Badge>} />
+        {selected ? <div className="attendance-phase" data-phase={phase} aria-live="polite"><div><span>{phase === "PRESENT" ? "Present period" : phase === "LATE" ? "Late period" : "Session closed"}</span><strong>{countdown}</strong></div><p>{phase === "PRESENT" ? `Check in before ${new Date(lateAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} to be marked present.` : phase === "LATE" ? "You can still check in, but your attendance will be recorded as late." : "This attendance session is no longer accepting submissions."}</p></div> : null}
         {sessions.length > 1 ? <div className="form-field"><label>Course session</label><select value={sessionId} onChange={(event) => { setSessionId(event.target.value); setQrToken(""); stopScanner(); }}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.course.code} — {session.course.title} ({session.method})</option>)}</select></div> : null}
         <div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location checked on submission</h4><p>Your device must be inside the lecturer’s {selected?.radiusMetres ?? "configured"}-metre classroom geofence.</p></div></div>
         <div style={{ marginTop: 22, textAlign: "center" }}>
-          {marked ? <div className="attendance-success"><CheckCircle2 size={30} /><div><strong>Attendance marked</strong><span>Your {marked.method} submission was recorded as {marked.status.toLowerCase()} at {new Date(marked.markedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</span></div></div> : <>
+          {marked ? <div className="attendance-success" role="status" aria-live="polite"><CheckCircle2 size={30} /><div><strong>Attendance marked: {marked.status}</strong><span>{selected?.course.code} · {marked.method} · {new Date(marked.markedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{marked.distanceMetres == null ? "" : ` · ${Math.round(Number(marked.distanceMetres))}m from classroom centre`}</span></div></div> : <>
           <p style={{ color: "var(--muted)", fontSize: ".7rem" }}>{qrLockedOnLaptop ? "This QR attendance session must be completed on a mobile phone." : qrToken ? "QR code accepted. Confirm below to verify your location and mark attendance." : usesQr ? "Scan the lecturer’s QR code using the camera inside ClassConnect." : "Enter the four-digit session PIN displayed by the lecturer."}</p>
           {qrLockedOnLaptop && !marked ? <div className="qr-phone-required"><Smartphone size={34} /><div><strong>Continue on your phone</strong><span>This class is using QR attendance. Open ClassConnect on your phone, go to Attendance, and scan the QR code displayed by your lecturer.</span><small>PIN attendance sessions can still be completed on this laptop.</small></div></div> : usesQr && !qrToken ? <div className="in-app-scanner">
             {scanning ? <div className="in-app-scanner__viewport"><video ref={video} muted playsInline /><span className="in-app-scanner__frame" /><button type="button" aria-label="Close scanner" onClick={stopScanner}><X size={18} /></button></div> : <div className="in-app-scanner__prompt"><QrCode size={38} /><strong>Scan attendance QR</strong><span>The camera opens here without leaving the student portal.</span><Button onClick={() => void startScanner()}><Camera size={16} /> Open scanner</Button></div>}
-            {scanError ? <p className="in-app-scanner__error">{scanError}</p> : null}
+            {scanError ? <p className="in-app-scanner__error" role="alert" aria-live="assertive">{scanError}</p> : null}
           </div> : !qrToken ? <div className="pin-entry">{digits.map((digit, index) => (
             <input
               aria-label={`PIN digit ${index + 1}`}
@@ -159,7 +195,7 @@ export function AttendanceCheckIn() {
               onKeyDown={(event) => { if (event.key === "Backspace" && !digit) inputs.current[index - 1]?.focus(); }}
             />
           ))}</div> : <div className="scanned-qr-status"><QrCode size={22} /><span>Secure session QR scanned</span></div>}
-          <Button disabled={submitting || !sessionId || qrLockedOnLaptop || (usesQr && !qrToken)} onClick={submit}><ShieldCheck size={16} /> {qrLockedOnLaptop ? "Continue on your phone" : submitting ? "Verifying…" : "Verify and mark attendance"}</Button>
+          <Button disabled={submitting || !sessionId || phase === "CLOSED" || qrLockedOnLaptop || (usesQr && !qrToken)} onClick={submit}><ShieldCheck size={16} /> {qrLockedOnLaptop ? "Continue on your phone" : submitting ? "Verifying…" : phase === "CLOSED" ? "Session closed" : "Verify and mark attendance"}</Button>
           </>}
         </div>
       </Card>

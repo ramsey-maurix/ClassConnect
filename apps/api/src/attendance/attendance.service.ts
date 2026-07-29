@@ -11,6 +11,7 @@ export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createSession(dto: CreateAttendanceSessionDto, lecturerId: string, ipAddress?: string) {
+    await this.expireSessions();
     if (dto.locationAccuracy > Math.max(100, dto.radiusMetres)) {
       throw new BadRequestException(
         `Lecturer location is only accurate to ${Math.round(dto.locationAccuracy)}m. Enable precise location or start the session from a GPS-enabled phone.`,
@@ -22,9 +23,18 @@ export class AttendanceService {
     });
     if (!assignment) throw new ForbiddenException("You can only start attendance for an assigned course");
     const active = await this.prisma.attendanceSession.findFirst({
-      where: { courseId: dto.courseId, status: AttendanceSessionStatus.ACTIVE, expiresAt: { gt: new Date() } },
+      where: {
+        lecturerId,
+        status: AttendanceSessionStatus.ACTIVE,
+        expiresAt: { gt: new Date() },
+      },
+      include: { course: true },
     });
-    if (active) throw new BadRequestException("This course already has an active attendance session");
+    if (active) {
+      throw new BadRequestException(
+        `You already have an active attendance session for ${active.course.code}. End that session before starting another one.`,
+      );
+    }
 
     const pin = randomInt(1000, 10_000).toString();
     const qrToken = randomBytes(32).toString("base64url");
@@ -64,6 +74,21 @@ export class AttendanceService {
           ipAddress,
         },
       });
+      const students = await tx.courseStudent.findMany({
+        where: { courseId: dto.courseId },
+        select: { studentId: true },
+      });
+      if (students.length) {
+        await tx.notification.createMany({
+          data: students.map(({ studentId }) => ({
+            userId: studentId,
+            type: "ATTENDANCE_SESSION_STARTED",
+            title: `${assignment.course.code} attendance is open`,
+            message: `${dto.method} attendance is open for ${dto.durationMinutes} minutes. Students arriving after ${dto.lateAfterMinutes} minutes will be marked late.`,
+            relatedEntityId: created.id,
+          })),
+        });
+      }
       return created;
     });
     return { ...session, pin: usePin ? pin : undefined, qrToken: useQr ? qrToken : undefined };
@@ -226,6 +251,7 @@ export class AttendanceService {
         data: absentIds.map((studentId) => ({ sessionId: id, studentId, method: session.method, status: AttendanceStatus.ABSENT })),
         skipDuplicates: true,
       });
+      await this.notifyAbsenceThresholds(session.courseId, absentIds);
     }
     await Promise.all(students.map(({ studentId }) => recalculateStudentRisk(this.prisma, studentId)));
     return session;
@@ -306,7 +332,19 @@ export class AttendanceService {
   history(studentId: string) {
     return this.prisma.attendanceRecord.findMany({
       where: { studentId },
-      include: { session: { include: { course: true } } },
+      include: {
+        session: {
+          select: {
+            id: true,
+            method: true,
+            startsAt: true,
+            expiresAt: true,
+            lateAfterMinutes: true,
+            status: true,
+            course: true,
+          },
+        },
+      },
       orderBy: { markedAt: "desc" },
     });
   }
@@ -330,6 +368,15 @@ export class AttendanceService {
           previousValue: { status: previous.status },
           newValue: { status: dto.status },
           reason: dto.reason,
+        },
+      });
+      await tx.notification.create({
+        data: {
+          userId: previous.studentId,
+          type: "ATTENDANCE_CORRECTED",
+          title: "Attendance record updated",
+          message: `Your attendance was changed from ${previous.status.toLowerCase()} to ${dto.status.toLowerCase()}. Reason: ${dto.reason}`,
+          relatedEntityId: id,
         },
       });
       return record;
@@ -382,6 +429,7 @@ export class AttendanceService {
         data: absentIds.map((studentId) => ({ sessionId: session.id, studentId, method: session.method, status: AttendanceStatus.ABSENT })),
           skipDuplicates: true,
         });
+        await this.notifyAbsenceThresholds(session.courseId, absentIds);
       }
       await Promise.all(students.map(({ studentId }) => recalculateStudentRisk(this.prisma, studentId)));
     }
@@ -461,6 +509,38 @@ export class AttendanceService {
       },
     });
     return { ...session, ...current };
+  }
+
+  private async notifyAbsenceThresholds(courseId: string, studentIds: string[]) {
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: { code: true },
+    });
+    if (!course) return;
+    for (const studentId of studentIds) {
+      const absences = await this.prisma.attendanceRecord.count({
+        where: {
+          studentId,
+          status: AttendanceStatus.ABSENT,
+          session: { courseId },
+        },
+      });
+      await this.prisma.notification.create({
+        data: {
+          userId: studentId,
+          type: absences >= 3 ? "EXAM_INELIGIBLE" : "ATTENDANCE_WARNING",
+          title:
+            absences >= 3
+              ? `${course.code}: exam eligibility warning`
+              : `${course.code}: ${absences} of 3 absences`,
+          message:
+            absences >= 3
+              ? `You now have ${absences} absences in ${course.code} and may be ineligible to write the examination. Contact your lecturer or department.`
+              : `You have ${absences} absence${absences === 1 ? "" : "s"} in ${course.code}. Three absences may make you ineligible to write the examination.`,
+          relatedEntityId: courseId,
+        },
+      });
+    }
   }
 
   private distanceMetres(lat1: number, lon1: number, lat2: number, lon2: number) {

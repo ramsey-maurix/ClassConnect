@@ -4,6 +4,7 @@ import {
   LiveStudentAnalytics,
   LiveStudentAttendance,
   LiveStudentAttendanceHistory,
+  LiveStudentAttendanceDetail,
   LiveStudentDashboard,
   LiveStudentGrades,
   LiveStudentNotifications,
@@ -16,6 +17,7 @@ import { AccountSettings } from "../account-settings";
 export function StudentDashboard() { return <LiveStudentDashboard />; }
 export function StudentAttendance() { return <LiveStudentAttendance />; }
 export function StudentAttendanceHistory() { return <LiveStudentAttendanceHistory />; }
+export function StudentAttendanceDetail({ recordId }: { recordId: string }) { return <LiveStudentAttendanceDetail recordId={recordId} />; }
 export function StudentGrades() { return <LiveStudentGrades />; }
 export function StudentAnalytics() { return <LiveStudentAnalytics />; }
 export function StudentStanding() { return <LiveStudentStanding />; }

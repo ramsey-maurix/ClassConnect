@@ -5,6 +5,7 @@ import {
   StudentAnalytics,
   StudentAttendance,
   StudentAttendanceHistory,
+  StudentAttendanceDetail,
   StudentDashboard,
   StudentGrades,
   StudentNotifications,
@@ -80,6 +81,11 @@ const adminPages: Record<string, ComponentType> = {
 };
 
 export function PortalContent({ role, page }: { role: PortalRole; page: string }) {
+  if (role === "student" && page.startsWith("attendance/history/")) {
+    const recordId = page.slice("attendance/history/".length);
+    if (!recordId) notFound();
+    return <StudentAttendanceDetail recordId={recordId} />;
+  }
   if (role === "lecturer" && page.startsWith("courses/")) {
     const courseId = page.slice("courses/".length);
     if (!courseId) notFound();

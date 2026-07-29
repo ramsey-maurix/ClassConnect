@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Award, Bell, BookOpenText, CheckCircle2, Clock3, GraduationCap, History, MapPinCheck, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Award, Bell, BookOpenText, CheckCircle2, Clock3, Eye, GraduationCap, History, MapPinCheck, ShieldCheck } from "lucide-react";
 import { Avatar, Badge, Button, Card, CardHeader, Progress, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest, authApi } from "@/lib/api/client";
 import type { SessionUser } from "@/lib/types";
@@ -14,7 +14,7 @@ type Course = {
   id: string; code: string; title: string; creditHours: number; status: string;
   offerings: Array<{ id: string; status: string; period: { academicYear: string; semester: string }; lecturer: { firstName: string; lastName: string } | null }>;
 };
-type Attendance = { id: string; status: string; method: string; distanceMetres: number | string | null; markedAt: string; session: { id: string; startsAt: string; course: Course } };
+type Attendance = { id: string; status: string; method: string; distanceMetres: number | string | null; markedAt: string; flaggedReason?: string | null; session: { id: string; startsAt: string; expiresAt: string; lateAfterMinutes: number; status: string; method: string; course: Course } };
 type Grade = { id: string; rawMark: number | string; percentage: number | string; weightedMark: number | string; status: string; publishedAt: string | null; assessment: { id: string; title: string; type: string; maximumMark: number | string; weight: number | string; course: Course } };
 type Risk = { id: string; riskLevel: string; reason: string; recommendation: string; course: Course | null };
 type Standing = { currentGpa: number | string; attendancePercentage: number | string; status: string; reason: string | null; calculatedAt: string };
@@ -76,14 +76,49 @@ export function LiveStudentAttendanceHistory() {
   }, new Map<string, { course: Course; rows: Attendance[] }>()).values()), [attendance]);
   if (loading) return <Card>Loading attendance history…</Card>;
   const attended = attendance.filter((item) => ["PRESENT", "LATE"].includes(item.status)).length;
-  return <div className="stack"><div className="grid grid--4"><StatCard label="Attendance records" value={attendance.length} icon={<History size={20} />} /><StatCard label="Present" value={attendance.filter((item) => item.status === "PRESENT").length} icon={<CheckCircle2 size={20} />} /><StatCard label="Late" value={attendance.filter((item) => item.status === "LATE").length} icon={<Clock3 size={20} />} /><StatCard label="Overall rate" value={`${(attendance.length ? attended / attendance.length * 100 : 0).toFixed(1)}%`} icon={<MapPinCheck size={20} />} /></div><Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Course</th><th>Records</th><th>Present</th><th>Late</th><th>Flagged</th><th>Rate</th></tr></thead><tbody>{grouped.map(({ course, rows }) => { const valid = rows.filter((item) => ["PRESENT", "LATE"].includes(item.status)).length; const rate = rows.length ? valid / rows.length * 100 : 0; return <tr key={course.id}><td><strong>{course.code}</strong><br /><span className="table-subtext">{course.title}</span></td><td>{rows.length}</td><td>{rows.filter((item) => item.status === "PRESENT").length}</td><td>{rows.filter((item) => item.status === "LATE").length}</td><td>{rows.filter((item) => item.status === "FLAGGED").length}</td><td><div style={{ minWidth: 130 }}><Progress value={rate} tone={rate < 75 ? "danger" : "success"} /></div><span>{rate.toFixed(1)}%</span></td></tr>; })}</tbody></table></div></Card></div>;
+  return <div className="stack"><div className="grid grid--4"><StatCard label="Attendance records" value={attendance.length} icon={<History size={20} />} /><StatCard label="Present" value={attendance.filter((item) => item.status === "PRESENT").length} icon={<CheckCircle2 size={20} />} /><StatCard label="Late" value={attendance.filter((item) => item.status === "LATE").length} icon={<Clock3 size={20} />} /><StatCard label="Overall rate" value={`${(attendance.length ? attended / attendance.length * 100 : 0).toFixed(1)}%`} icon={<MapPinCheck size={20} />} /></div><Card className="table-shell"><div style={{ padding: 18 }}><CardHeader title="Attendance by course" description="Three absences in a course may make you ineligible to write its examination" /></div><div className="table-wrap"><table><thead><tr><th>Course</th><th>Records</th><th>Present</th><th>Late</th><th>Absent</th><th>Warning</th><th>Rate</th></tr></thead><tbody>{grouped.map(({ course, rows }) => { const valid = rows.filter((item) => ["PRESENT", "LATE"].includes(item.status)).length; const absences = rows.filter((item) => item.status === "ABSENT").length; const rate = rows.length ? valid / rows.length * 100 : 0; return <tr key={course.id}><td><strong>{course.code}</strong><br /><span className="table-subtext">{course.title}</span></td><td>{rows.length}</td><td>{rows.filter((item) => item.status === "PRESENT").length}</td><td>{rows.filter((item) => item.status === "LATE").length}</td><td>{absences}</td><td><Badge tone={absences >= 3 ? "danger" : absences === 2 ? "warning" : "info"}>{absences >= 3 ? "Exam ineligible" : `${absences} of 3 absences`}</Badge></td><td><div style={{ minWidth: 130 }}><Progress value={rate} tone={rate < 75 ? "danger" : "success"} /></div><span>{rate.toFixed(1)}%</span></td></tr>; })}</tbody></table></div></Card><Card className="table-shell"><div style={{ padding: 18 }}><CardHeader title="Session history" description="Open a record to see its verification and final attendance details" /></div><div className="table-wrap"><table><thead><tr><th>Course</th><th>Date</th><th>Method</th><th>Marked at</th><th>Status</th><th>Details</th></tr></thead><tbody>{attendance.map((record) => <tr key={record.id}><td><strong>{record.session.course.code}</strong><br /><span className="table-subtext">{record.session.course.title}</span></td><td>{new Date(record.session.startsAt).toLocaleDateString()}</td><td>{record.method}</td><td>{new Date(record.markedAt).toLocaleTimeString()}</td><td><Badge tone={tone(record.status)}>{record.status}</Badge></td><td><Link className="icon-button" href={`/student/attendance/history/${record.id}`} aria-label={`Open ${record.session.course.code} attendance details`} title="View attendance details"><Eye size={16} /></Link></td></tr>)}</tbody></table></div></Card></div>;
+}
+
+export function LiveStudentAttendanceDetail({ recordId }: { recordId: string }) {
+  const { toast } = useToast();
+  const [record, setRecord] = useState<Attendance | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiRequest<Attendance[]>("/attendance/student/history")
+      .then((items) => setRecord(items.find((item) => item.id === recordId) ?? null))
+      .catch((error) => toast("Attendance details could not be loaded", errorMessage(error), "danger"))
+      .finally(() => setLoading(false));
+  }, [recordId]);
+  if (loading) return <Card>Loading attendance details…</Card>;
+  if (!record) return <Empty>This attendance record could not be found.</Empty>;
+  return <div className="stack"><div className="page-header"><div><Link className="table-subtext" href="/student/attendance/history">← Attendance History</Link><h2>{record.session.course.code} attendance</h2><p>{record.session.course.title} · {new Date(record.session.startsAt).toLocaleString()}</p></div><Badge tone={tone(record.status)}>{record.status}</Badge></div><div className="grid grid--3"><StatCard label="Final status" value={record.status} icon={<CheckCircle2 size={20} />} /><StatCard label="Method" value={record.method} icon={<ShieldCheck size={20} />} /><StatCard label="Distance" value={record.distanceMetres == null ? "Unavailable" : `${Math.round(Number(record.distanceMetres))}m`} icon={<MapPinCheck size={20} />} /></div><Card><CardHeader title="Verification details" description="Your private attendance record for this session" /><div className="settings-row"><div><h4>Session opened</h4><p>The lecturer started the attendance window</p></div><strong>{new Date(record.session.startsAt).toLocaleString()}</strong></div><div className="settings-row"><div><h4>Late threshold</h4><p>Submissions after this time are recorded as late</p></div><strong>{new Date(new Date(record.session.startsAt).getTime() + record.session.lateAfterMinutes * 60_000).toLocaleTimeString()}</strong></div><div className="settings-row"><div><h4>Your submission</h4><p>Recorded using {record.method}</p></div><strong>{new Date(record.markedAt).toLocaleString()}</strong></div>{record.flaggedReason ? <div className="alert-card alert-card--warning"><span className="alert-card__icon"><AlertTriangle size={17} /></span><div><h3>Verification note</h3><p>{record.flaggedReason}</p></div></div> : null}</Card></div>;
 }
 
 export function LiveStudentGrades() {
   const { grades, analytics, loading } = useStudentRecords();
   if (loading) return <Card>Loading published grades…</Card>;
   const average = grades.length ? grades.reduce((sum, item) => sum + Number(item.percentage), 0) / grades.length : 0;
-  return <div className="stack"><div className="grid grid--4"><StatCard label="Current GPA" value={Number(analytics?.standing?.currentGpa ?? 0).toFixed(2)} icon={<GraduationCap size={20} />} /><StatCard label="Published grades" value={grades.length} icon={<BookOpenText size={20} />} /><StatCard label="Assessment average" value={`${average.toFixed(1)}%`} icon={<Award size={20} />} /><StatCard label="Courses graded" value={new Set(grades.map((item) => item.assessment.course.id)).size} icon={<CheckCircle2 size={20} />} /></div>{grades.length ? <Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Course</th><th>Assessment</th><th>Type</th><th>Raw mark</th><th>Percentage</th><th>Weight earned</th><th>Status</th></tr></thead><tbody>{grades.map((grade) => <tr key={grade.id}><td><strong>{grade.assessment.course.code}</strong><br /><span className="table-subtext">{grade.assessment.course.title}</span></td><td>{grade.assessment.title}</td><td>{grade.assessment.type.replace("_", " ")}</td><td>{Number(grade.rawMark)} / {Number(grade.assessment.maximumMark)}</td><td>{Number(grade.percentage).toFixed(1)}%</td><td>{Number(grade.weightedMark).toFixed(1)} / {Number(grade.assessment.weight)}</td><td><Badge tone={tone(grade.status)}>{grade.status}</Badge></td></tr>)}</tbody></table></div></Card> : <Empty>No grades have been published for you yet.</Empty>}</div>;
+  const courseTotals = Array.from(
+    grades.reduce((map, grade) => {
+      const id = grade.assessment.course.id;
+      const current = map.get(id) ?? {
+        course: grade.assessment.course,
+        earned: 0,
+        publishedWeight: 0,
+        assessments: 0,
+      };
+      current.earned += Number(grade.weightedMark);
+      current.publishedWeight += Number(grade.assessment.weight);
+      current.assessments += 1;
+      map.set(id, current);
+      return map;
+    }, new Map<string, { course: Course; earned: number; publishedWeight: number; assessments: number }>()),
+  ).map(([, value]) => value);
+  return <div className="stack">
+    <div className="grid grid--4"><StatCard label="Current GPA" value={Number(analytics?.standing?.currentGpa ?? 0).toFixed(2)} icon={<GraduationCap size={20} />} /><StatCard label="Published grades" value={grades.length} icon={<BookOpenText size={20} />} /><StatCard label="Assessment average" value={`${average.toFixed(1)}%`} icon={<Award size={20} />} /><StatCard label="Courses graded" value={courseTotals.length} icon={<CheckCircle2 size={20} />} /></div>
+    {courseTotals.length ? <Card className="table-shell"><div style={{ padding: 18 }}><CardHeader title="Weighted course totals" description="Current totals include only assessments your lecturer has published" /></div><div className="table-wrap"><table><thead><tr><th>Course</th><th>Published assessments</th><th>Published weight</th><th>Weighted total earned</th><th>Current performance</th></tr></thead><tbody>{courseTotals.map((item) => { const performance = item.publishedWeight ? item.earned / item.publishedWeight * 100 : 0; return <tr key={item.course.id}><td><strong>{item.course.code}</strong><br /><span className="table-subtext">{item.course.title}</span></td><td>{item.assessments}</td><td>{item.publishedWeight.toFixed(1)}%</td><td>{item.earned.toFixed(1)} / {item.publishedWeight.toFixed(1)}</td><td><Badge tone={performance < 50 ? "danger" : performance < 60 ? "warning" : "success"}>{performance.toFixed(1)}%</Badge></td></tr>; })}</tbody></table></div></Card> : null}
+    {grades.length ? <Card className="table-shell"><div style={{ padding: 18 }}><CardHeader title="Published assessment results" description="Only published and corrected marks are visible" /></div><div className="table-wrap"><table><thead><tr><th>Course</th><th>Assessment</th><th>Type</th><th>Raw mark</th><th>Percentage</th><th>Weight earned</th><th>Status</th></tr></thead><tbody>{grades.map((grade) => <tr key={grade.id}><td><strong>{grade.assessment.course.code}</strong><br /><span className="table-subtext">{grade.assessment.course.title}</span></td><td>{grade.assessment.title}</td><td>{grade.assessment.type.replace("_", " ")}</td><td>{Number(grade.rawMark)} / {Number(grade.assessment.maximumMark)}</td><td>{Number(grade.percentage).toFixed(1)}%</td><td>{Number(grade.weightedMark).toFixed(1)} / {Number(grade.assessment.weight)}</td><td><Badge tone={tone(grade.status)}>{grade.status}</Badge></td></tr>)}</tbody></table></div></Card> : <Empty>No grades have been published for you yet.</Empty>}
+  </div>;
 }
 
 export function LiveStudentAnalytics() {

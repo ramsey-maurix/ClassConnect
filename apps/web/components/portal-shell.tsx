@@ -35,6 +35,8 @@ export function PortalShell({ role, user, children }: { role: PortalRole; user: 
         ? { title: "Course Details", description: "Course information and enrolled students" }
         : role === "lecturer" && pageKey.startsWith("attendance/session/")
           ? { title: "Attendance Session Details", description: "Session attendance and student records" }
+          : role === "student" && pageKey.startsWith("attendance/history/")
+            ? { title: "Attendance Details", description: "Your private attendance verification record" }
           : pageMeta[pageKey] ?? pageMeta.dashboard;
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AttendanceStatus, GradeStatus, Prisma, RiskStatus, UserRole } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -161,6 +161,25 @@ export class SystemService {
   }
 
   async updateSettings(settings: Record<string, unknown>, actorId: string) {
+    const ranges: Record<string, [number, number]> = {
+      qrRotationSeconds: [5, 300],
+      defaultSessionDurationMinutes: [5, 360],
+      defaultLateAfterMinutes: [0, 120],
+      defaultGpsRadiusMetres: [10, 1000],
+      absenceLimit: [1, 20],
+    };
+    for (const [key, [minimum, maximum]] of Object.entries(ranges)) {
+      if (!(key in settings)) continue;
+      const value = Number(settings[key]);
+      if (!Number.isFinite(value) || value < minimum || value > maximum) {
+        throw new BadRequestException(`${key} must be between ${minimum} and ${maximum}`);
+      }
+    }
+    const duration = Number(settings.defaultSessionDurationMinutes);
+    const late = Number(settings.defaultLateAfterMinutes);
+    if (Number.isFinite(duration) && Number.isFinite(late) && late >= duration) {
+      throw new BadRequestException("The default late threshold must be earlier than the default session duration");
+    }
     await this.prisma.$transaction(async (tx) => {
       for (const [key, value] of Object.entries(settings)) {
         await tx.systemSetting.upsert({

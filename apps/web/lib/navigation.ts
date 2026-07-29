@@ -66,6 +66,7 @@ export const navigation: Record<PortalRole, NavGroup[]> = {
       label: "Governance",
       items: [
         { label: "Cohort Analytics", href: "/admin/analytics", icon: "ChartNoAxesCombined" },
+        { label: "Attendance Management", href: "/admin/attendance", icon: "ClipboardCheck" },
         { label: "Reports", href: "/admin/reports", icon: "FileChartColumnIncreasing" },
         { label: "Audit Log", href: "/admin/audit", icon: "ScrollText" },
         { label: "Notifications", href: "/admin/notifications", icon: "Bell" },

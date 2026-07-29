@@ -242,17 +242,21 @@ export function LiveCreateSession() {
   const [courses, setCourses] = useState<Course[]>([]); const [courseId, setCourseId] = useState("");
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [duration, setDuration] = useState(15); const [radius, setRadius] = useState(50); const [late, setLate] = useState(5);
+  const [duration, setDuration] = useState(15); const [radius, setRadius] = useState(50); const [late, setLate] = useState(10);
   const [method, setMethod] = useState("PIN"); const [saving, setSaving] = useState(false);
   useEffect(() => {
     Promise.all([
       apiRequest<Course[]>("/courses"),
       apiRequest<Session[]>("/attendance/sessions/active"),
+      apiRequest<{ defaultSessionDurationMinutes: number; defaultLateAfterMinutes: number; defaultGpsRadiusMetres: number }>("/attendance/policies"),
     ])
-      .then(([items, active]) => {
+      .then(([items, active, policies]) => {
         setCourses(items);
         setCourseId(items[0]?.id ?? "");
         setActiveSession(active[0] ?? null);
+        setDuration(policies.defaultSessionDurationMinutes);
+        setLate(policies.defaultLateAfterMinutes);
+        setRadius(policies.defaultGpsRadiusMetres);
       })
       .catch((error) => toast("Session workspace could not be loaded", message(error), "danger"))
       .finally(() => setLoading(false));
@@ -276,7 +280,7 @@ export function LiveCreateSession() {
   if (loading) return <Card>Checking your attendance sessions…</Card>;
   if (activeSession) return <div className="empty-live-state"><div className="empty-live-state__icon"><ClipboardCheck size={34} /></div><span className="live-pill">Session already active</span><h2>{activeSession.course.code} attendance is currently live</h2><p>Only one attendance session can run at a time on your lecturer account. This rule applies across your phone, laptop, and every browser where you are signed in.</p><div className="empty-live-state__actions"><Link className="ui-button ui-button--primary ui-button--md" href="/lecturer/attendance/live">Open live monitor</Link><Link className="ui-button ui-button--secondary ui-button--md" href="/lecturer/attendance">Attendance overview</Link></div></div>;
   if (!courses.length) return <Empty>You need an assigned course before starting attendance.</Empty>;
-  return <div className="grid grid--main"><Card><CardHeader title="Session configuration" description="The browser will use your current location as the classroom centre" /><form onSubmit={submit}><div className="form-grid"><div className="form-field"><label>Assigned course</label><select value={courseId} onChange={(event) => setCourseId(event.target.value)}>{courses.map((course) => <option value={course.id} key={course.id}>{course.code} — {course.title}</option>)}</select></div><div className="form-field"><label>Verification method</label><select value={method} onChange={(event) => setMethod(event.target.value)}><option value="PIN">PIN</option><option value="QR">QR code</option></select></div><div className="form-field"><label>Duration</label><select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={10}>10 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></div><div className="form-field"><label>Allowed radius</label><select value={radius} onChange={(event) => setRadius(Number(event.target.value))}><option value={25}>25 metres</option><option value={50}>50 metres</option><option value={75}>75 metres</option><option value={100}>100 metres</option></select></div><div className="form-field"><label>Mark late after</label><select value={late} onChange={(event) => setLate(Number(event.target.value))}><option value={0}>Immediately</option><option value={5}>5 minutes</option><option value={10}>10 minutes</option><option value={15}>15 minutes</option></select></div></div><div className="form-actions"><Button disabled={saving} type="submit"><Play size={16} /> {saving ? "Starting…" : "Start session"}</Button></div></form></Card><Card><CardHeader title="Geofence protection" description="Students must be registered for the course and physically inside this radius" /><div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location captured on start</h4><p>For the best result, start the session from inside the classroom and allow precise location access.</p></div></div></Card></div>;
+  return <div className="grid grid--main"><Card><CardHeader title="Session configuration" description="The browser will use your current location as the classroom centre" /><form onSubmit={submit}><div className="form-grid"><div className="form-field"><label>Assigned course</label><select value={courseId} onChange={(event) => setCourseId(event.target.value)}>{courses.map((course) => <option value={course.id} key={course.id}>{course.code} — {course.title}</option>)}</select></div><div className="form-field"><label>Verification method</label><select value={method} onChange={(event) => setMethod(event.target.value)}><option value="PIN">PIN</option><option value="QR">QR code</option></select></div><div className="form-field"><label>Duration (minutes)</label><input type="number" min={5} max={360} value={duration} onChange={(event) => setDuration(Number(event.target.value))} /></div><div className="form-field"><label>Allowed radius (metres)</label><input type="number" min={10} max={1000} value={radius} onChange={(event) => setRadius(Number(event.target.value))} /></div><div className="form-field"><label>Mark late after (minutes)</label><input type="number" min={0} max={Math.max(0, duration - 1)} value={late} onChange={(event) => setLate(Number(event.target.value))} /></div></div><div className="form-actions"><Button disabled={saving || late >= duration} type="submit"><Play size={16} /> {saving ? "Starting…" : "Start session"}</Button></div>{late >= duration ? <p className="field-error">The late threshold must be earlier than the session end.</p> : null}</form></Card><Card><CardHeader title="Geofence protection" description="Students must be registered for the course and physically inside this radius" /><div className="gps-status"><div className="gps-radar"><span /></div><div><h4>Location captured on start</h4><p>For the best result, start the session from inside the classroom and allow precise location access.</p></div></div></Card></div>;
 }
 
 export function LiveSessionMonitor() {

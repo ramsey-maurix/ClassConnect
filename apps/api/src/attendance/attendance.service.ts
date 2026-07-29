@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AttendanceMethod, AttendanceSessionStatus, AttendanceStatus, UserRole } from "@prisma/client";
+import { AttendanceMethod, AttendanceSessionStatus, AttendanceStatus, Prisma, Semester, UserRole } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -10,8 +10,77 @@ import type { CreateAttendanceSessionDto, MarkAttendanceDto, UpdateAttendanceRec
 export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async policies() {
+    const defaults = {
+      qrRotationSeconds: 20,
+      defaultSessionDurationMinutes: 15,
+      defaultLateAfterMinutes: 10,
+      defaultGpsRadiusMetres: 50,
+      absenceLimit: 3,
+    };
+    const rows = await this.prisma.systemSetting.findMany({
+      where: { key: { in: Object.keys(defaults) } },
+      select: { key: true, value: true },
+    });
+    return rows.reduce((result, row) => {
+      const value = Number(row.value);
+      if (Number.isFinite(value)) result[row.key as keyof typeof defaults] = value;
+      return result;
+    }, defaults);
+  }
+
+  async adminSessions(filters: {
+    programmeId?: string; courseId?: string; lecturerId?: string; from?: string; to?: string;
+    status?: string; method?: string; academicYear?: string; semester?: string;
+  }) {
+    await this.expireSessions();
+    const startsAt: Prisma.DateTimeFilter = {};
+    if (filters.from) startsAt.gte = new Date(`${filters.from}T00:00:00.000Z`);
+    if (filters.to) startsAt.lte = new Date(`${filters.to}T23:59:59.999Z`);
+    const offeringFilter = filters.academicYear || filters.semester ? {
+      some: {
+        period: {
+          ...(filters.academicYear ? { academicYear: filters.academicYear } : {}),
+          ...(filters.semester && Object.values(Semester).includes(filters.semester as Semester) ? { semester: filters.semester as Semester } : {}),
+        },
+      },
+    } : undefined;
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        ...(filters.courseId ? { courseId: filters.courseId } : {}),
+        ...(filters.lecturerId ? { lecturerId: filters.lecturerId } : {}),
+        ...(filters.status && Object.values(AttendanceSessionStatus).includes(filters.status as AttendanceSessionStatus)
+          ? { status: filters.status as AttendanceSessionStatus } : {}),
+        ...(filters.method && Object.values(AttendanceMethod).includes(filters.method as AttendanceMethod)
+          ? { method: filters.method as AttendanceMethod } : {}),
+        ...(Object.keys(startsAt).length ? { startsAt } : {}),
+        course: {
+          ...(filters.programmeId ? { programmes: { some: { programmeId: filters.programmeId } } } : {}),
+          ...(offeringFilter ? { offerings: offeringFilter } : {}),
+        },
+      },
+      include: {
+        course: {
+          include: {
+            programmes: { include: { programme: true } },
+            offerings: { include: { period: true }, orderBy: { createdAt: "desc" }, take: 3 },
+          },
+        },
+        lecturer: { select: { id: true, firstName: true, lastName: true, staffNumber: true } },
+        records: { select: { status: true } },
+        _count: { select: { records: true } },
+      },
+      orderBy: { startsAt: "desc" },
+      take: 500,
+    });
+    return sessions;
+  }
+
   async createSession(dto: CreateAttendanceSessionDto, lecturerId: string, ipAddress?: string) {
     await this.expireSessions();
+    if (dto.lateAfterMinutes >= dto.durationMinutes) {
+      throw new BadRequestException("The late threshold must be earlier than the session end");
+    }
     if (dto.locationAccuracy > Math.max(100, dto.radiusMetres)) {
       throw new BadRequestException(
         `Lecturer location is only accurate to ${Math.round(dto.locationAccuracy)}m. Enable precise location or start the session from a GPS-enabled phone.`,
@@ -210,8 +279,8 @@ export class AttendanceService {
       : new Date() > lateAt
         ? AttendanceStatus.LATE
         : AttendanceStatus.PRESENT;
-    const record = await this.prisma.attendanceRecord.create({
-      data: {
+    const record = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.attendanceRecord.create({ data: {
         sessionId,
         studentId,
         method,
@@ -223,7 +292,16 @@ export class AttendanceService {
         flaggedReason: suspicious
           ? `GPS review: measured ${Math.round(distance)}m, adjusted ${Math.round(effectiveDistance)}m, radius ${session.radiusMetres}m, lecturer accuracy ${Math.round(session.locationAccuracy ?? 0)}m, student accuracy ${Math.round(dto.accuracy)}m; ${userAgent ?? "unknown device"}`
           : null,
-      },
+      } });
+      await tx.auditLog.create({ data: {
+        actorUserId: studentId,
+        action: "ATTENDANCE_MARKED",
+        entityType: "AttendanceRecord",
+        entityId: created.id,
+        description: `${session.course.code} attendance marked ${status} using ${method}`,
+        newValue: { sessionId, courseId: session.courseId, status, method },
+      } });
+      return created;
     });
     await this.prisma.notification.create({
       data: {
@@ -252,6 +330,12 @@ export class AttendanceService {
         skipDuplicates: true,
       });
       await this.notifyAbsenceThresholds(session.courseId, absentIds);
+      await this.prisma.auditLog.create({ data: {
+        actorUserId: lecturerId, action: "ATTENDANCE_ABSENCES_FINALIZED",
+        entityType: "AttendanceSession", entityId: id,
+        description: `${absentIds.length} absent attendance record(s) finalized`,
+        newValue: { absentCount: absentIds.length },
+      } });
     }
     await Promise.all(students.map(({ studentId }) => recalculateStudentRisk(this.prisma, studentId)));
     return session;
@@ -309,7 +393,8 @@ export class AttendanceService {
         qrRotatedAt: new Date(),
       },
     });
-    return { qrToken, rotatesInSeconds: 20 };
+    const { qrRotationSeconds } = await this.policies();
+    return { qrToken, rotatesInSeconds: qrRotationSeconds };
   }
 
   async reissuePin(id: string, lecturerId: string) {
@@ -389,9 +474,21 @@ export class AttendanceService {
     const session = await this.prisma.attendanceSession.findUnique({ where: { id } });
     if (!session) throw new NotFoundException("Attendance session not found");
     if (session.lecturerId !== lecturerId) throw new ForbiddenException("Only the session lecturer can change it");
-    return this.prisma.attendanceSession.update({
-      where: { id },
-      data: { status, pinCode: null, qrToken: null },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.attendanceSession.update({
+        where: { id },
+        data: { status, pinCode: null, qrToken: null },
+      });
+      await tx.auditLog.create({ data: {
+        actorUserId: lecturerId,
+        action: `ATTENDANCE_SESSION_${status}`,
+        entityType: "AttendanceSession",
+        entityId: id,
+        description: `Attendance session changed from ${session.status} to ${status}`,
+        previousValue: { status: session.status },
+        newValue: { status },
+      } });
+      return updated;
     });
   }
 
@@ -418,6 +515,12 @@ export class AttendanceService {
       },
     });
     for (const session of expired) {
+      await this.prisma.auditLog.create({ data: {
+        action: "ATTENDANCE_SESSION_EXPIRED", entityType: "AttendanceSession",
+        entityId: session.id, description: "Attendance session expired automatically",
+        previousValue: { status: AttendanceSessionStatus.ACTIVE },
+        newValue: { status: AttendanceSessionStatus.EXPIRED },
+      } });
       const [students, marked] = await Promise.all([
         this.prisma.courseStudent.findMany({ where: { courseId: session.courseId }, select: { studentId: true } }),
         this.prisma.attendanceRecord.findMany({ where: { sessionId: session.id }, select: { studentId: true } }),
@@ -468,7 +571,8 @@ export class AttendanceService {
     ) {
       return session;
     }
-    const rotationMs = 20_000;
+    const { qrRotationSeconds } = await this.policies();
+    const rotationMs = Math.max(5, qrRotationSeconds) * 1000;
     if (
       session.qrToken &&
       session.qrRotatedAt &&
@@ -512,6 +616,7 @@ export class AttendanceService {
   }
 
   private async notifyAbsenceThresholds(courseId: string, studentIds: string[]) {
+    const { absenceLimit } = await this.policies();
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
       select: { code: true },
@@ -528,15 +633,15 @@ export class AttendanceService {
       await this.prisma.notification.create({
         data: {
           userId: studentId,
-          type: absences >= 3 ? "EXAM_INELIGIBLE" : "ATTENDANCE_WARNING",
+          type: absences >= absenceLimit ? "EXAM_INELIGIBLE" : "ATTENDANCE_WARNING",
           title:
-            absences >= 3
+            absences >= absenceLimit
               ? `${course.code}: exam eligibility warning`
-              : `${course.code}: ${absences} of 3 absences`,
+              : `${course.code}: ${absences} of ${absenceLimit} absences`,
           message:
-            absences >= 3
+            absences >= absenceLimit
               ? `You now have ${absences} absences in ${course.code} and may be ineligible to write the examination. Contact your lecturer or department.`
-              : `You have ${absences} absence${absences === 1 ? "" : "s"} in ${course.code}. Three absences may make you ineligible to write the examination.`,
+              : `You have ${absences} absence${absences === 1 ? "" : "s"} in ${course.code}. ${absenceLimit} absences may make you ineligible to write the examination.`,
           relatedEntityId: courseId,
         },
       });

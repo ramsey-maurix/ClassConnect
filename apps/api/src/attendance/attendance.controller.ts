@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import { UserRole } from "@prisma/client";
 import { ApiCookieAuth, ApiParam, ApiTags } from "@nestjs/swagger";
 import { Roles } from "../auth/roles.decorator";
@@ -21,6 +21,27 @@ export class AttendanceController {
   @Get("sessions/active")
   active(@Req() request: RequestWithUser) {
     return this.attendance.active(request.user.sub, request.user.role);
+  }
+
+  @Get("policies")
+  policies() {
+    return this.attendance.policies();
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Get("admin/sessions")
+  adminSessions(
+    @Query("programmeId") programmeId?: string,
+    @Query("courseId") courseId?: string,
+    @Query("lecturerId") lecturerId?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("status") status?: string,
+    @Query("method") method?: string,
+    @Query("academicYear") academicYear?: string,
+    @Query("semester") semester?: string,
+  ) {
+    return this.attendance.adminSessions({ programmeId, courseId, lecturerId, from, to, status, method, academicYear, semester });
   }
 
   @Roles(UserRole.LECTURER)

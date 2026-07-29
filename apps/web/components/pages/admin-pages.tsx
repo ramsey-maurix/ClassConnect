@@ -6,6 +6,7 @@ import { AdminCoursesManager } from "../admin-courses-manager";
 import { ClassAssignmentsManager } from "../class-assignments-manager";
 import {
   LiveAdminAnalytics,
+  LiveAdminAttendance,
   LiveAdminAudit,
   LiveAdminDashboard,
   LiveAdminReports,
@@ -28,6 +29,7 @@ export const AdminAcademicStructure = AcademicStructureManager;
 export const AdminCourses = AdminCoursesManager;
 export const AdminEnrolments = ClassAssignmentsManager;
 export const AdminAnalytics = LiveAdminAnalytics;
+export const AdminAttendance = LiveAdminAttendance;
 export const AdminReports = LiveAdminReports;
 export const AdminAudit = LiveAdminAudit;
 export const AdminSettings = LiveAdminSettings;

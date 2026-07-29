@@ -17,6 +17,7 @@ import {
   LecturerAnalytics,
   LecturerAttendanceOverview,
   LecturerCourses,
+  LecturerCourseDetail,
   LecturerDashboard,
   LecturerGrades,
   LecturerLiveSession,
@@ -78,6 +79,11 @@ const adminPages: Record<string, ComponentType> = {
 };
 
 export function PortalContent({ role, page }: { role: PortalRole; page: string }) {
+  if (role === "lecturer" && page.startsWith("courses/")) {
+    const courseId = page.slice("courses/".length);
+    if (!courseId) notFound();
+    return <LecturerCourseDetail courseId={courseId} />;
+  }
   const group = role === "student" ? studentPages : role === "lecturer" ? lecturerPages : adminPages;
   const Component = group[page];
   if (!Component) notFound();

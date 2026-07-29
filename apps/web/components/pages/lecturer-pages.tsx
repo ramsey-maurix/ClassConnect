@@ -6,6 +6,7 @@ import {
   LiveLecturerAnalytics,
   LiveLecturerAttendanceOverview,
   LiveLecturerCourses,
+  LiveLecturerCourseDetail,
   LiveLecturerDashboard,
   LiveLecturerNotifications,
   LiveLecturerStudents,
@@ -19,6 +20,10 @@ export function LecturerDashboard() {
 
 export function LecturerCourses() {
   return <LiveLecturerCourses />;
+}
+
+export function LecturerCourseDetail({ courseId }: { courseId: string }) {
+  return <LiveLecturerCourseDetail courseId={courseId} />;
 }
 
 export function LecturerAttendanceOverview() {

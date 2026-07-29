@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BookOpenText, CheckCircle2, ClipboardCheck, Maximize2, Play, QrCode, RotateCcw, Send, Trash2, UsersRound, X } from "lucide-react";
+import { AlertTriangle, BookOpenText, CheckCircle2, ClipboardCheck, Eye, Maximize2, Play, QrCode, RotateCcw, Send, Trash2, UsersRound, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Avatar, Badge, Button, Card, CardHeader, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
@@ -43,7 +43,16 @@ type Assessment = {
   grades?: Array<{ id: string; studentId: string; rawMark: number | string; status: string; student: Pick<Student, "id" | "firstName" | "lastName" | "studentNumber"> }>;
 };
 type Notification = { id: string; title: string; message: string; createdAt: string; readAt: string | null; type: string };
-type Analytics = { course: Course & { _count: { students: number } }; grades: { _avg: { percentage: number | string | null }; _min: { percentage: number | string | null }; _max: { percentage: number | string | null } }; attendance: Array<{ status: string; _count: number }> };
+type Analytics = {
+  course: Course & { _count: { students: number } };
+  grades: { _avg: { percentage: number | string | null }; _min: { percentage: number | string | null }; _max: { percentage: number | string | null } };
+  attendance: Array<{ status: string; _count: number }>;
+  students: Array<{
+    id: string; firstName: string; lastName: string; studentNumber: string | null;
+    gradeAverage: number | null; attendancePercentage: number | null;
+    attendance: Record<string, number>; standing: string;
+  }>;
+};
 
 function message(error: unknown) {
   return error instanceof ApiError ? error.message : "Please try again.";
@@ -95,15 +104,100 @@ export function LiveLecturerCourses() {
   return <div className="grid grid--2">{courses.map((course) => {
     const active = sessions.find((item) => item.course.id === course.id && item.status === "ACTIVE");
     const offering = course.offerings.find((item) => item.status === "ACTIVE");
-    return <Card key={course.id}><CardHeader title={`${course.code} — ${course.title}`} description={offering ? `${offering.period.academicYear} · ${offering.period.semester.replace("_", " ")}` : `${course.creditHours} credits`} action={<Badge tone={active ? "success" : "info"}>{active ? "Session live" : course.status}</Badge>} /><div className="course-summary"><div><span>Students</span><strong>{course._count.students}</strong></div><div><span>Credits</span><strong>{course.creditHours}</strong></div><div><span>Sessions</span><strong>{sessions.filter((item) => item.course.id === course.id).length}</strong></div></div><div className="card-actions"><Link className="ui-button ui-button--secondary ui-button--sm" href={`/lecturer/analytics?course=${course.id}`}>Analytics</Link><Link className="ui-button ui-button--primary ui-button--sm" href={`/lecturer/grades?course=${course.id}`}>Manage grades</Link></div></Card>;
+    return <Card key={course.id}><CardHeader title={`${course.code} — ${course.title}`} description={offering ? `${offering.period.academicYear} · ${offering.period.semester.replace("_", " ")}` : `${course.creditHours} credits`} action={<Badge tone={active ? "success" : "info"}>{active ? "Session live" : course.status}</Badge>} /><div className="course-summary"><div><span>Students</span><strong>{course._count.students}</strong></div><div><span>Credits</span><strong>{course.creditHours}</strong></div><div><span>Sessions</span><strong>{sessions.filter((item) => item.course.id === course.id).length}</strong></div></div><div className="card-actions"><Link className="ui-button ui-button--secondary ui-button--sm" href={`/lecturer/courses/${course.id}`}>View course details</Link><Link className="ui-button ui-button--secondary ui-button--sm" href={`/lecturer/analytics?course=${course.id}`}>Analytics</Link><Link className="ui-button ui-button--primary ui-button--sm" href={`/lecturer/grades?course=${course.id}`}>Manage grades</Link></div></Card>;
   })}</div>;
 }
 
+export function LiveLecturerCourseDetail({ courseId }: { courseId: string }) {
+  const { toast } = useToast();
+  const [course, setCourse] = useState<CourseDetail | null>(null);
+  useEffect(() => {
+    apiRequest<CourseDetail>(`/courses/${courseId}`)
+      .then(setCourse)
+      .catch((error) =>
+        toast("Course details could not be loaded", message(error), "danger"),
+      );
+  }, [courseId]);
+  if (!course) return <Card>Loading course details…</Card>;
+  return (
+    <div className="stack">
+      <div className="page-header page-header--actions">
+        <div>
+          <Link href="/lecturer/courses" className="table-subtext">
+            ← My Courses
+          </Link>
+          <h2>{course.code} — {course.title}</h2>
+          <p>{course.creditHours} credit hours · {course.status}</p>
+        </div>
+        <div className="page-header__actions">
+          <Link className="ui-button ui-button--secondary ui-button--sm" href={`/lecturer/analytics?course=${course.id}`}>Class analytics</Link>
+          <Link className="ui-button ui-button--primary ui-button--sm" href={`/lecturer/grades?course=${course.id}`}>Manage grades</Link>
+        </div>
+      </div>
+      <div className="grid grid--3">
+        <StatCard label="Enrolled students" value={course.students.length} icon={<UsersRound size={20} />} />
+        <StatCard label="Credit hours" value={course.creditHours} icon={<BookOpenText size={20} />} />
+        <StatCard label="Course offerings" value={course.offerings.length} icon={<ClipboardCheck size={20} />} />
+      </div>
+      <Card className="table-shell">
+        <div style={{ padding: 18 }}>
+          <CardHeader title="Enrolled students" description="Students currently registered for this course" />
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Student</th><th>Index number</th><th>Programme</th><th>Attendance</th><th>GPA</th><th>Standing</th></tr></thead>
+            <tbody>
+              {course.students.map(({ student }) => (
+                <tr key={student.id}>
+                  <td><div className="student-cell"><Avatar name={`${student.firstName} ${student.lastName}`} size="sm" /><div><strong>{student.firstName} {student.lastName}</strong><span>{student.email}</span></div></div></td>
+                  <td>{student.studentNumber ?? "—"}</td>
+                  <td>{student.programme?.name ?? "Not assigned"}</td>
+                  <td>{student.academicStanding ? `${Number(student.academicStanding.attendancePercentage).toFixed(1)}%` : "—"}</td>
+                  <td>{student.academicStanding ? Number(student.academicStanding.currentGpa).toFixed(2) : "—"}</td>
+                  <td><Badge tone={student.riskAlerts.length ? "danger" : "success"}>{student.riskAlerts.length ? "At risk" : student.academicStanding?.status ?? "Pending"}</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export function LiveLecturerAttendanceOverview() {
-  const { sessions, loading } = useLecturerData();
+  const { toast } = useToast();
+  const { sessions, loading, reload } = useLecturerData();
+  const [detail, setDetail] = useState<LiveSession | null>(null);
+  async function viewSession(id: string) {
+    try {
+      setDetail(await apiRequest<LiveSession>(`/attendance/sessions/${id}`));
+    } catch (error) {
+      toast("Session details could not be loaded", message(error), "danger");
+    }
+  }
+  async function removeSession(session: Session) {
+    if (session._count.records > 0) {
+      toast("Session retained", "This session contains attendance records and must remain in the academic history.", "warning");
+      return;
+    }
+    if (!window.confirm(`Delete the empty ${session.course.code} attendance session?`)) return;
+    try {
+      await apiRequest(`/attendance/sessions/${session.id}`, { method: "DELETE" });
+      await reload();
+      toast("Session deleted", "The empty attendance session was removed.", "success");
+    } catch (error) {
+      toast("Session could not be deleted", message(error), "danger");
+    }
+  }
   if (loading) return <Card>Loading attendance sessions…</Card>;
   const statuses = sessions.flatMap((item) => item.records ?? []);
-  return <div className="stack"><div className="page-header page-header--actions"><div className="page-header__actions"><Link className="ui-button ui-button--primary ui-button--md" href="/lecturer/attendance/new"><QrCode size={16} /> Start session</Link></div></div><div className="grid grid--4"><StatCard label="Sessions" value={sessions.length} icon={<ClipboardCheck size={20} />} /><StatCard label="Submissions" value={statuses.length} icon={<UsersRound size={20} />} /><StatCard label="Present / late" value={statuses.filter((item) => ["PRESENT", "LATE"].includes(item.status)).length} icon={<CheckCircle2 size={20} />} /><StatCard label="Flagged" value={statuses.filter((item) => item.status === "FLAGGED").length} icon={<AlertTriangle size={20} />} trendTone="danger" /></div><Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Course</th><th>Started</th><th>Present</th><th>Late</th><th>Flagged</th><th>Total</th><th>Status</th></tr></thead><tbody>{sessions.map((session) => <tr key={session.id}><td><strong>{session.course.code}</strong><br /><span className="table-subtext">{session.course.title}</span></td><td>{new Date(session.startsAt).toLocaleString()}</td><td>{session.records?.filter((item) => item.status === "PRESENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "LATE").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "FLAGGED").length ?? 0}</td><td>{session._count.records}</td><td><Badge tone={session.status === "ACTIVE" ? "success" : "neutral"}>{session.status}</Badge></td></tr>)}</tbody></table></div></Card></div>;
+  return <div className="stack">
+    <div className="page-header page-header--actions"><div className="page-header__actions"><Link className="ui-button ui-button--primary ui-button--md" href="/lecturer/attendance/new"><QrCode size={16} /> Start session</Link></div></div>
+    <div className="grid grid--4"><StatCard label="Sessions" value={sessions.length} icon={<ClipboardCheck size={20} />} /><StatCard label="Submissions" value={statuses.length} icon={<UsersRound size={20} />} /><StatCard label="Present / late" value={statuses.filter((item) => ["PRESENT", "LATE"].includes(item.status)).length} icon={<CheckCircle2 size={20} />} /><StatCard label="Flagged" value={statuses.filter((item) => item.status === "FLAGGED").length} icon={<AlertTriangle size={20} />} trendTone="danger" /></div>
+    <Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Course</th><th>Started</th><th>Present</th><th>Late</th><th>Absent</th><th>Flagged</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>{sessions.map((session) => <tr key={session.id}><td><strong>{session.course.code}</strong><br /><span className="table-subtext">{session.course.title}</span></td><td>{new Date(session.startsAt).toLocaleString()}</td><td>{session.records?.filter((item) => item.status === "PRESENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "LATE").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "ABSENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "FLAGGED").length ?? 0}</td><td>{session._count.records}</td><td><Badge tone={session.status === "ACTIVE" ? "success" : "neutral"}>{session.status}</Badge></td><td><div className="card-actions"><Button variant="secondary" onClick={() => void viewSession(session.id)}><Eye size={15} /> View</Button>{session._count.records === 0 ? <Button variant="danger" onClick={() => void removeSession(session)}><Trash2 size={15} /> Delete</Button> : null}</div></td></tr>)}</tbody></table></div></Card>
+    {detail ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="session-detail-title"><div className="modal__head"><div><h3 id="session-detail-title">{detail.course.code} attendance session</h3><p>{new Date(detail.startsAt).toLocaleString()} · {detail.method} · late after {detail.lateAfterMinutes ?? 0} minutes</p></div><button className="modal__close" type="button" aria-label="Close" onClick={() => setDetail(null)}><X size={17} /></button></div><div className="modal__body"><div className="course-summary"><div><span>Present</span><strong>{detail.records.filter((item) => item.status === "PRESENT").length}</strong></div><div><span>Late</span><strong>{detail.records.filter((item) => item.status === "LATE").length}</strong></div><div><span>Absent</span><strong>{detail.records.filter((item) => item.status === "ABSENT").length}</strong></div></div><div className="table-wrap"><table><thead><tr><th>Student</th><th>Index number</th><th>Marked</th><th>Method</th><th>Status</th></tr></thead><tbody>{detail.records.map((record) => <tr key={record.id}><td>{record.student.firstName} {record.student.lastName}</td><td>{record.student.studentNumber ?? "—"}</td><td>{new Date(record.markedAt).toLocaleTimeString()}</td><td>{record.method}</td><td><Badge tone={record.status === "PRESENT" ? "success" : record.status === "LATE" ? "warning" : "danger"}>{record.status}</Badge></td></tr>)}</tbody></table></div></div></section></div> : null}
+  </div>;
 }
 
 export function LiveCreateSession() {
@@ -144,7 +238,6 @@ export function LiveSessionMonitor() {
   const [savingReview, setSavingReview] = useState(false);
   const [liveQrToken, setLiveQrToken] = useState("");
   const [livePin, setLivePin] = useState("");
-  const [qrRefreshSeconds, setQrRefreshSeconds] = useState(20);
   async function load() {
     try {
       const activeSessions = await apiRequest<Session[]>("/attendance/sessions/active");
@@ -153,63 +246,15 @@ export function LiveSessionMonitor() {
       const id = activeId ?? storedId;
       if (id) {
         sessionStorage.setItem("classconnect-live-session", id);
-        setSession(await apiRequest<LiveSession>(`/attendance/sessions/${id}`));
+        const loaded = await apiRequest<LiveSession>(`/attendance/sessions/${id}`);
+        setSession(loaded);
+        setLivePin(loaded.pin ?? "");
+        setLiveQrToken(loaded.qrToken ?? "");
       }
     } catch (error) { toast("Live session could not be loaded", message(error), "danger"); }
   }
   useEffect(() => { void load(); const timer = setInterval(() => void load(), 5000); return () => clearInterval(timer); }, []);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-  useEffect(() => {
-    if (!session || session.method !== "QR" || session.status !== "ACTIVE") {
-      setLiveQrToken("");
-      return;
-    }
-    let cancelled = false;
-    const storedToken = sessionStorage.getItem("classconnect-live-qr") ?? "";
-    setLiveQrToken(storedToken);
-    setQrRefreshSeconds(20);
-    const rotate = async () => {
-      try {
-        const result = await apiRequest<{ qrToken: string; rotatesInSeconds: number }>(`/attendance/sessions/${session.id}/qr/rotate`, { method: "POST" });
-        if (cancelled) return;
-        sessionStorage.setItem("classconnect-live-qr", result.qrToken);
-        setLiveQrToken(result.qrToken);
-        setQrRefreshSeconds(result.rotatesInSeconds);
-      } catch (error) {
-        if (!cancelled) toast("QR code could not be refreshed", message(error), "danger");
-      }
-    };
-    if (!storedToken) void rotate();
-    const rotationTimer = window.setInterval(() => void rotate(), 20_000);
-    const countdownTimer = window.setInterval(() => setQrRefreshSeconds((value) => value <= 1 ? 20 : value - 1), 1_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(rotationTimer);
-      window.clearInterval(countdownTimer);
-    };
-  }, [session?.id, session?.method, session?.status]);
-  useEffect(() => {
-    if (!session || session.method !== "PIN" || session.status !== "ACTIVE") {
-      setLivePin("");
-      return;
-    }
-    const storedPin = sessionStorage.getItem("classconnect-live-pin") ?? "";
-    if (storedPin) {
-      setLivePin(storedPin);
-      return;
-    }
-    let cancelled = false;
-    apiRequest<{ pin: string }>(`/attendance/sessions/${session.id}/pin/reissue`, { method: "POST" })
-      .then((result) => {
-        if (cancelled) return;
-        sessionStorage.setItem("classconnect-live-pin", result.pin);
-        setLivePin(result.pin);
-      })
-      .catch((error) => {
-        if (!cancelled) toast("Session PIN could not be loaded", message(error), "danger");
-      });
-    return () => { cancelled = true; };
-  }, [session?.id, session?.method, session?.status]);
   useEffect(() => {
     if (!projecting) return;
     const previousOverflow = document.body.style.overflow;
@@ -331,7 +376,7 @@ export function LiveLecturerAnalytics() {
   useEffect(() => { if (courseId) apiRequest<Analytics>(`/analytics/course/${courseId}`).then(setData).catch((error) => toast("Analytics could not be loaded", message(error), "danger")); }, [courseId]);
   if (!courses.length) return <Empty>No assigned course is available for analytics.</Empty>;
   const total = data?.attendance.reduce((sum, item) => sum + item._count, 0) ?? 0; const present = data?.attendance.filter((item) => ["PRESENT", "LATE"].includes(item.status)).reduce((sum, item) => sum + item._count, 0) ?? 0;
-  return <div className="stack"><div className="table-toolbar"><div className="form-field"><label>Assigned course</label><select value={courseId} onChange={(event) => setCourseId(event.target.value)}>{courses.map((course) => <option value={course.id} key={course.id}>{course.code} — {course.title}</option>)}</select></div></div>{data ? <><div className="grid grid--4"><StatCard label="Students" value={data.course._count.students} icon={<UsersRound size={20} />} /><StatCard label="Class average" value={`${Number(data.grades._avg.percentage ?? 0).toFixed(1)}%`} icon={<BookOpenText size={20} />} /><StatCard label="Attendance rate" value={`${(total ? present / total * 100 : 0).toFixed(1)}%`} icon={<ClipboardCheck size={20} />} /><StatCard label="Attendance records" value={total} icon={<CheckCircle2 size={20} />} /></div><div className="grid grid--2"><Card><CardHeader title="Grade range" description="Published and corrected assessment records" /><div className="course-summary"><div><span>Minimum</span><strong>{Number(data.grades._min.percentage ?? 0).toFixed(1)}%</strong></div><div><span>Average</span><strong>{Number(data.grades._avg.percentage ?? 0).toFixed(1)}%</strong></div><div><span>Maximum</span><strong>{Number(data.grades._max.percentage ?? 0).toFixed(1)}%</strong></div></div></Card><Card><CardHeader title="Attendance distribution" description="Live records for this assigned course" />{data.attendance.map((item) => <div className="settings-row" key={item.status}><strong>{item.status.replace("_", " ")}</strong><Badge tone={item.status === "PRESENT" ? "success" : item.status === "FLAGGED" ? "danger" : "warning"}>{item._count}</Badge></div>)}</Card></div></> : <Card>Calculating course analytics…</Card>}</div>;
+  return <div className="stack"><div className="table-toolbar"><div className="form-field"><label>Assigned course</label><select value={courseId} onChange={(event) => setCourseId(event.target.value)}>{courses.map((course) => <option value={course.id} key={course.id}>{course.code} — {course.title}</option>)}</select></div></div>{data ? <><div className="grid grid--4"><StatCard label="Students" value={data.course._count.students} icon={<UsersRound size={20} />} /><StatCard label="Class average" value={`${Number(data.grades._avg.percentage ?? 0).toFixed(1)}%`} icon={<BookOpenText size={20} />} /><StatCard label="Attendance rate" value={`${(total ? present / total * 100 : 0).toFixed(1)}%`} icon={<ClipboardCheck size={20} />} /><StatCard label="Attendance records" value={total} icon={<CheckCircle2 size={20} />} /></div><div className="grid grid--2"><Card><CardHeader title="Grade range" description="Published and corrected assessment records" /><div className="course-summary"><div><span>Minimum</span><strong>{Number(data.grades._min.percentage ?? 0).toFixed(1)}%</strong></div><div><span>Average</span><strong>{Number(data.grades._avg.percentage ?? 0).toFixed(1)}%</strong></div><div><span>Maximum</span><strong>{Number(data.grades._max.percentage ?? 0).toFixed(1)}%</strong></div></div></Card><Card><CardHeader title="Attendance distribution" description="Live records for this assigned course" />{data.attendance.map((item) => <div className="settings-row" key={item.status}><strong>{item.status.replace("_", " ")}</strong><Badge tone={item.status === "PRESENT" ? "success" : item.status === "FLAGGED" ? "danger" : "warning"}>{item._count}</Badge></div>)}</Card></div><Card className="table-shell"><div style={{ padding: 18 }}><CardHeader title="Student performance and attendance" description="Individual results for the selected class" /></div><div className="table-wrap"><table><thead><tr><th>Student</th><th>Index number</th><th>Grade average</th><th>Attendance</th><th>Present</th><th>Late</th><th>Absent</th><th>Standing</th></tr></thead><tbody>{data.students.map((student) => <tr key={student.id}><td><strong>{student.firstName} {student.lastName}</strong></td><td>{student.studentNumber ?? "—"}</td><td>{student.gradeAverage == null ? "No published grades" : `${student.gradeAverage.toFixed(1)}%`}</td><td>{student.attendancePercentage == null ? "No sessions" : `${student.attendancePercentage.toFixed(1)}%`}</td><td>{student.attendance.PRESENT ?? 0}</td><td>{student.attendance.LATE ?? 0}</td><td>{student.attendance.ABSENT ?? 0}</td><td><Badge tone={student.standing === "GOOD" ? "success" : student.standing === "PROBATION" ? "danger" : "warning"}>{student.standing.replace("_", " ")}</Badge></td></tr>)}</tbody></table></div></Card></> : <Card>Calculating course analytics…</Card>}</div>;
 }
 
 export function LiveLecturerStudents() {

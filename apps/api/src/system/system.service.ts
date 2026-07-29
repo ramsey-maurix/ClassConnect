@@ -43,7 +43,7 @@ export class SystemService {
       const assignment = await this.prisma.courseLecturer.findUnique({ where: { courseId_lecturerId: { courseId, lecturerId: userId } } });
       if (!assignment) throw new ForbiddenException("You are not assigned to this course");
     }
-    const [course, grades, attendance] = await Promise.all([
+    const [course, grades, attendance, students] = await Promise.all([
       this.prisma.course.findUniqueOrThrow({ where: { id: courseId }, include: { _count: { select: { students: true } } } }),
       this.prisma.grade.aggregate({
         where: { assessment: { courseId }, status: { in: [GradeStatus.PUBLISHED, GradeStatus.CORRECTED] } },
@@ -52,8 +52,66 @@ export class SystemService {
         _max: { percentage: true },
       }),
       this.prisma.attendanceRecord.groupBy({ by: ["status"], where: { session: { courseId } }, _count: true }),
+      this.prisma.courseStudent.findMany({
+        where: { courseId },
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              studentNumber: true,
+              academicStanding: true,
+              grades: {
+                where: {
+                  assessment: { courseId },
+                  status: { in: [GradeStatus.PUBLISHED, GradeStatus.CORRECTED] },
+                },
+                select: { percentage: true },
+              },
+              attendanceRecords: {
+                where: { session: { courseId } },
+                select: { status: true },
+              },
+            },
+          },
+        },
+      }),
     ]);
-    return { course, grades, attendance };
+    return {
+      course,
+      grades,
+      attendance,
+      students: students.map(({ student }) => {
+        const attended = student.attendanceRecords.filter(
+          (record) =>
+            record.status === AttendanceStatus.PRESENT ||
+            record.status === AttendanceStatus.LATE,
+        ).length;
+        const gradeAverage = student.grades.length
+          ? student.grades.reduce((sum, grade) => sum + Number(grade.percentage), 0) /
+            student.grades.length
+          : null;
+        return {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          studentNumber: student.studentNumber,
+          gradeAverage,
+          attendancePercentage: student.attendanceRecords.length
+            ? (attended / student.attendanceRecords.length) * 100
+            : null,
+          attendance: student.attendanceRecords.reduce<Record<string, number>>(
+            (counts, record) => ({
+              ...counts,
+              [record.status]: (counts[record.status] ?? 0) + 1,
+            }),
+            {},
+          ),
+          standing: student.academicStanding?.status ?? "NOT_CALCULATED",
+        };
+      }),
+    };
   }
 
   async adminAnalytics() {

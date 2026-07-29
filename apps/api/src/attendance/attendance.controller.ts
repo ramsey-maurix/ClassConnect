@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from "@nestjs/common";
 import { UserRole } from "@prisma/client";
 import { ApiCookieAuth, ApiParam, ApiTags } from "@nestjs/swagger";
 import { Roles } from "../auth/roles.decorator";
@@ -60,6 +60,13 @@ export class AttendanceController {
   @ApiParam({ name: "id", description: "Attendance session ID" })
   cancel(@Param("id") id: string, @Req() request: RequestWithUser) {
     return this.attendance.cancel(id, request.user.sub);
+  }
+
+  @Roles(UserRole.LECTURER)
+  @Delete("sessions/:id")
+  @ApiParam({ name: "id", description: "Empty attendance session ID" })
+  deleteEmpty(@Param("id") id: string, @Req() request: RequestWithUser) {
+    return this.attendance.deleteEmptySession(id, request.user.sub);
   }
 
   @Roles(UserRole.LECTURER)

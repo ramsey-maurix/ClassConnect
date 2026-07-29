@@ -40,7 +40,10 @@ export class AttendanceService {
           lecturerId,
           method: dto.method,
           pinHash: usePin ? await hash(pin, 10) : null,
+          pinCode: usePin ? pin : null,
           qrTokenHash: useQr ? this.digest(qrToken) : null,
+          qrToken: useQr ? qrToken : null,
+          qrRotatedAt: useQr ? startsAt : null,
           latitude: dto.latitude,
           longitude: dto.longitude,
           locationAccuracy: dto.locationAccuracy,
@@ -74,7 +77,7 @@ export class AttendanceService {
         : role === UserRole.LECTURER
           ? { lecturerId: userId }
           : {};
-    return this.prisma.attendanceSession.findMany({
+    const sessions = await this.prisma.attendanceSession.findMany({
       where: { ...where, status: AttendanceSessionStatus.ACTIVE, expiresAt: { gt: new Date() } },
       include: {
         course: true,
@@ -86,11 +89,16 @@ export class AttendanceService {
       },
       orderBy: { startsAt: "desc" },
     });
+    return sessions.map((session) =>
+      role === UserRole.LECTURER
+        ? { ...session, pin: session.pinCode ?? undefined, qrToken: session.qrToken ?? undefined }
+        : this.withoutCredentials(session),
+    );
   }
 
   async sessions(lecturerId: string) {
     await this.expireSessions();
-    return this.prisma.attendanceSession.findMany({
+    const sessions = await this.prisma.attendanceSession.findMany({
       where: { lecturerId },
       include: {
         course: true,
@@ -100,17 +108,28 @@ export class AttendanceService {
       orderBy: { startsAt: "desc" },
       take: 100,
     });
+    return sessions.map((session) => ({
+      ...session,
+      pin: session.pinCode ?? undefined,
+      qrToken: session.qrToken ?? undefined,
+    }));
   }
 
   async get(id: string, userId: string, role: UserRole) {
     await this.expireSessions();
-    const session = await this.prisma.attendanceSession.findUnique({
+    const found = await this.prisma.attendanceSession.findUnique({
       where: { id },
       include: { course: true, records: { include: { student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } } } } },
     });
-    if (!session) throw new NotFoundException("Attendance session not found");
+    if (!found) throw new NotFoundException("Attendance session not found");
+    const session =
+      role === UserRole.LECTURER && found.lecturerId === userId
+        ? await this.refreshQrCredential(found)
+        : found;
     await this.assertCourseAccess(session.courseId, userId, role);
-    return session;
+    return role === UserRole.LECTURER && session.lecturerId === userId
+      ? { ...session, pin: session.pinCode ?? undefined, qrToken: session.qrToken ?? undefined }
+      : this.withoutCredentials(session);
   }
 
   async mark(sessionId: string, dto: MarkAttendanceDto, studentId: string, userAgent?: string) {
@@ -135,12 +154,14 @@ export class AttendanceService {
       && [session.qrTokenHash, session.previousQrTokenHash].includes(this.digest(dto.qrToken))
     ) method = AttendanceMethod.QR;
     else throw new BadRequestException(dto.pin ? "Invalid PIN" : "Invalid QR code");
-    if (method === AttendanceMethod.QR && !/Android|iPhone|iPad|iPod|Mobile/i.test(userAgent ?? "")) {
+    if (
+      method === AttendanceMethod.QR &&
+      !/Android|iPhone|iPad|iPod|Mobile/i.test(userAgent ?? "")
+    ) {
       throw new BadRequestException(
         "QR attendance must be completed on a mobile phone. Open ClassConnect on your phone and scan the lecturer's QR code.",
       );
     }
-
     if (session.latitude === null || session.longitude === null) throw new BadRequestException("Session location is unavailable");
     const distance = this.distanceMetres(
       Number(session.latitude),
@@ -214,6 +235,35 @@ export class AttendanceService {
     return this.setSessionStatus(id, lecturerId, AttendanceSessionStatus.CANCELLED);
   }
 
+  async deleteEmptySession(id: string, lecturerId: string) {
+    const session = await this.prisma.attendanceSession.findUnique({
+      where: { id },
+      include: { course: true, _count: { select: { records: true } } },
+    });
+    if (!session) throw new NotFoundException("Attendance session not found");
+    if (session.lecturerId !== lecturerId) {
+      throw new ForbiddenException("Only the session lecturer can delete it");
+    }
+    if (session._count.records > 0) {
+      throw new BadRequestException(
+        "Sessions with attendance records cannot be deleted. Cancel or close this session to preserve academic history.",
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.auditLog.create({
+        data: {
+          actorUserId: lecturerId,
+          action: "EMPTY_ATTENDANCE_SESSION_DELETED",
+          entityType: "AttendanceSession",
+          entityId: session.id,
+          description: `Empty attendance session deleted for ${session.course.code}`,
+        },
+      }),
+      this.prisma.attendanceSession.delete({ where: { id } }),
+    ]);
+    return { message: "Empty attendance session deleted" };
+  }
+
   async rotateQrToken(id: string, lecturerId: string) {
     const session = await this.prisma.attendanceSession.findUnique({ where: { id } });
     if (!session) throw new NotFoundException("Attendance session not found");
@@ -229,6 +279,8 @@ export class AttendanceService {
       data: {
         previousQrTokenHash: session.qrTokenHash,
         qrTokenHash: this.digest(qrToken),
+        qrToken,
+        qrRotatedAt: new Date(),
       },
     });
     return { qrToken, rotatesInSeconds: 20 };
@@ -246,7 +298,7 @@ export class AttendanceService {
     const pin = randomInt(1000, 10_000).toString();
     await this.prisma.attendanceSession.update({
       where: { id },
-      data: { pinHash: await hash(pin, 10) },
+      data: { pinHash: await hash(pin, 10), pinCode: pin },
     });
     return { pin };
   }
@@ -290,7 +342,10 @@ export class AttendanceService {
     const session = await this.prisma.attendanceSession.findUnique({ where: { id } });
     if (!session) throw new NotFoundException("Attendance session not found");
     if (session.lecturerId !== lecturerId) throw new ForbiddenException("Only the session lecturer can change it");
-    return this.prisma.attendanceSession.update({ where: { id }, data: { status } });
+    return this.prisma.attendanceSession.update({
+      where: { id },
+      data: { status, pinCode: null, qrToken: null },
+    });
   }
 
   private async assertCourseAccess(courseId: string, userId: string, role: UserRole) {
@@ -309,7 +364,11 @@ export class AttendanceService {
     if (!expired.length) return;
     await this.prisma.attendanceSession.updateMany({
       where: { id: { in: expired.map((session) => session.id) } },
-      data: { status: AttendanceSessionStatus.EXPIRED },
+      data: {
+        status: AttendanceSessionStatus.EXPIRED,
+        pinCode: null,
+        qrToken: null,
+      },
     });
     for (const session of expired) {
       const [students, marked] = await Promise.all([
@@ -330,6 +389,78 @@ export class AttendanceService {
 
   private digest(value: string) {
     return createHash("sha256").update(value).digest("hex");
+  }
+
+  private withoutCredentials<T extends Record<string, unknown>>(session: T) {
+    const {
+      pinHash: _pinHash,
+      pinCode: _pinCode,
+      qrTokenHash: _qrTokenHash,
+      previousQrTokenHash: _previousQrTokenHash,
+      qrToken: _qrToken,
+      ...safe
+    } = session;
+    return safe;
+  }
+
+  private async refreshQrCredential<T extends {
+    id: string;
+    method: AttendanceMethod;
+    status: AttendanceSessionStatus;
+    expiresAt: Date;
+    qrToken: string | null;
+    qrTokenHash: string | null;
+    previousQrTokenHash: string | null;
+    qrRotatedAt: Date | null;
+  }>(session: T): Promise<T> {
+    if (
+      session.method !== AttendanceMethod.QR ||
+      session.status !== AttendanceSessionStatus.ACTIVE ||
+      session.expiresAt <= new Date()
+    ) {
+      return session;
+    }
+    const rotationMs = 20_000;
+    if (
+      session.qrToken &&
+      session.qrRotatedAt &&
+      Date.now() - session.qrRotatedAt.getTime() < rotationMs
+    ) {
+      return session;
+    }
+    const qrToken = randomBytes(32).toString("base64url");
+    const qrRotatedAt = new Date();
+    const updated = await this.prisma.attendanceSession.updateMany({
+      where: {
+        id: session.id,
+        qrRotatedAt: session.qrRotatedAt,
+      },
+      data: {
+        previousQrTokenHash: session.qrTokenHash,
+        qrTokenHash: this.digest(qrToken),
+        qrToken,
+        qrRotatedAt,
+      },
+    });
+    if (updated.count) {
+      return {
+        ...session,
+        previousQrTokenHash: session.qrTokenHash,
+        qrTokenHash: this.digest(qrToken),
+        qrToken,
+        qrRotatedAt,
+      };
+    }
+    const current = await this.prisma.attendanceSession.findUniqueOrThrow({
+      where: { id: session.id },
+      select: {
+        qrToken: true,
+        qrTokenHash: true,
+        previousQrTokenHash: true,
+        qrRotatedAt: true,
+      },
+    });
+    return { ...session, ...current };
   }
 
   private distanceMetres(lat1: number, lon1: number, lat2: number, lon2: number) {

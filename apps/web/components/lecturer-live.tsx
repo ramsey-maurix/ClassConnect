@@ -121,7 +121,7 @@ export function LiveLecturerCourseDetail({ courseId }: { courseId: string }) {
   if (!course) return <Card>Loading course details…</Card>;
   return (
     <div className="stack">
-      <div className="page-header page-header--actions">
+      <div className="page-header">
         <div>
           <Link href="/lecturer/courses" className="table-subtext">
             ← My Courses
@@ -195,8 +195,45 @@ export function LiveLecturerAttendanceOverview() {
   return <div className="stack">
     <div className="page-header page-header--actions"><div className="page-header__actions"><Link className="ui-button ui-button--primary ui-button--md" href="/lecturer/attendance/new"><QrCode size={16} /> Start session</Link></div></div>
     <div className="grid grid--4"><StatCard label="Sessions" value={sessions.length} icon={<ClipboardCheck size={20} />} /><StatCard label="Submissions" value={statuses.length} icon={<UsersRound size={20} />} /><StatCard label="Present / late" value={statuses.filter((item) => ["PRESENT", "LATE"].includes(item.status)).length} icon={<CheckCircle2 size={20} />} /><StatCard label="Flagged" value={statuses.filter((item) => item.status === "FLAGGED").length} icon={<AlertTriangle size={20} />} trendTone="danger" /></div>
-    <Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Course</th><th>Started</th><th>Present</th><th>Late</th><th>Absent</th><th>Flagged</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>{sessions.map((session) => <tr key={session.id}><td><strong>{session.course.code}</strong><br /><span className="table-subtext">{session.course.title}</span></td><td>{new Date(session.startsAt).toLocaleString()}</td><td>{session.records?.filter((item) => item.status === "PRESENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "LATE").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "ABSENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "FLAGGED").length ?? 0}</td><td>{session._count.records}</td><td><Badge tone={session.status === "ACTIVE" ? "success" : "neutral"}>{session.status}</Badge></td><td><div className="card-actions"><Button variant="secondary" onClick={() => void viewSession(session.id)}><Eye size={15} /> View</Button>{session._count.records === 0 ? <Button variant="danger" onClick={() => void removeSession(session)}><Trash2 size={15} /> Delete</Button> : null}</div></td></tr>)}</tbody></table></div></Card>
+    <Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Course</th><th>Started</th><th>Present</th><th>Late</th><th>Absent</th><th>Flagged</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>{sessions.map((session) => <tr key={session.id}><td><strong>{session.course.code}</strong><br /><span className="table-subtext">{session.course.title}</span></td><td>{new Date(session.startsAt).toLocaleString()}</td><td>{session.records?.filter((item) => item.status === "PRESENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "LATE").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "ABSENT").length ?? 0}</td><td>{session.records?.filter((item) => item.status === "FLAGGED").length ?? 0}</td><td>{session._count.records}</td><td><Badge tone={session.status === "ACTIVE" ? "success" : "neutral"}>{session.status}</Badge></td><td><div className="card-actions"><Link className="icon-button" href={`/lecturer/attendance/session/${session.id}`} aria-label={`View ${session.course.code} session details`} title="View session details"><Eye size={16} /></Link>{session._count.records === 0 ? <Button variant="danger" onClick={() => void removeSession(session)}><Trash2 size={15} /> Delete</Button> : null}</div></td></tr>)}</tbody></table></div></Card>
     {detail ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="session-detail-title"><div className="modal__head"><div><h3 id="session-detail-title">{detail.course.code} attendance session</h3><p>{new Date(detail.startsAt).toLocaleString()} · {detail.method} · late after {detail.lateAfterMinutes ?? 0} minutes</p></div><button className="modal__close" type="button" aria-label="Close" onClick={() => setDetail(null)}><X size={17} /></button></div><div className="modal__body"><div className="course-summary"><div><span>Present</span><strong>{detail.records.filter((item) => item.status === "PRESENT").length}</strong></div><div><span>Late</span><strong>{detail.records.filter((item) => item.status === "LATE").length}</strong></div><div><span>Absent</span><strong>{detail.records.filter((item) => item.status === "ABSENT").length}</strong></div></div><div className="table-wrap"><table><thead><tr><th>Student</th><th>Index number</th><th>Marked</th><th>Method</th><th>Status</th></tr></thead><tbody>{detail.records.map((record) => <tr key={record.id}><td>{record.student.firstName} {record.student.lastName}</td><td>{record.student.studentNumber ?? "—"}</td><td>{new Date(record.markedAt).toLocaleTimeString()}</td><td>{record.method}</td><td><Badge tone={record.status === "PRESENT" ? "success" : record.status === "LATE" ? "warning" : "danger"}>{record.status}</Badge></td></tr>)}</tbody></table></div></div></section></div> : null}
+  </div>;
+}
+
+export function LiveLecturerSessionDetail({ sessionId }: { sessionId: string }) {
+  const { toast } = useToast();
+  const router = useRouter();
+  const [session, setSession] = useState<LiveSession | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiRequest<LiveSession>(`/attendance/sessions/${sessionId}`)
+      .then(setSession)
+      .catch((error) => toast("Session details could not be loaded", message(error), "danger"))
+      .finally(() => setLoading(false));
+  }, [sessionId]);
+  async function remove() {
+    if (!session || session.records.length) return;
+    if (!window.confirm(`Delete the empty ${session.course.code} attendance session?`)) return;
+    try {
+      await apiRequest(`/attendance/sessions/${session.id}`, { method: "DELETE" });
+      toast("Session deleted", "The empty attendance session was removed.", "success");
+      router.push("/lecturer/attendance");
+      router.refresh();
+    } catch (error) {
+      toast("Session could not be deleted", message(error), "danger");
+    }
+  }
+  if (loading) return <Card>Loading attendance session…</Card>;
+  if (!session) return <Empty>The attendance session could not be found.</Empty>;
+  const count = (status: string) => session.records.filter((record) => record.status === status).length;
+  return <div className="stack">
+    <div className="page-header">
+      <div><Link href="/lecturer/attendance" className="table-subtext">← Attendance Overview</Link><h2>{session.course.code} attendance session</h2><p>{session.course.title} · {new Date(session.startsAt).toLocaleString()} · {session.method}</p></div>
+      <div className="page-header__actions">{session.records.length === 0 ? <Button variant="danger" onClick={() => void remove()}><Trash2 size={16} /> Delete empty session</Button> : null}</div>
+    </div>
+    <div className="grid grid--4"><StatCard label="Present" value={count("PRESENT")} icon={<CheckCircle2 size={20} />} /><StatCard label="Late" value={count("LATE")} icon={<AlertTriangle size={20} />} /><StatCard label="Absent" value={count("ABSENT")} icon={<UsersRound size={20} />} /><StatCard label="Total records" value={session.records.length} icon={<ClipboardCheck size={20} />} /></div>
+    <Card><CardHeader title="Session information" description={`Students were marked late after ${session.lateAfterMinutes ?? 0} minutes`} /><div className="course-summary"><div><span>Status</span><strong>{session.status}</strong></div><div><span>Method</span><strong>{session.method}</strong></div><div><span>Geofence</span><strong>{session.radiusMetres}m</strong></div></div></Card>
+    <Card className="table-shell"><div style={{ padding: 18 }}><CardHeader title="Student attendance" description="Present, late, absent, excused, and flagged records for this session" /></div><div className="table-wrap"><table><thead><tr><th>Student</th><th>Index number</th><th>Marked at</th><th>Method</th><th>Distance</th><th>Status</th></tr></thead><tbody>{session.records.map((record) => <tr key={record.id}><td><div className="student-cell"><Avatar name={`${record.student.firstName} ${record.student.lastName}`} size="sm" /><div><strong>{record.student.firstName} {record.student.lastName}</strong></div></div></td><td>{record.student.studentNumber ?? "—"}</td><td>{new Date(record.markedAt).toLocaleString()}</td><td>{record.method}</td><td>{record.distanceMetres == null ? "—" : `${Math.round(Number(record.distanceMetres))}m`}</td><td><Badge tone={record.status === "PRESENT" ? "success" : record.status === "LATE" ? "warning" : "danger"}>{record.status}</Badge></td></tr>)}</tbody></table></div></Card>
   </div>;
 }
 

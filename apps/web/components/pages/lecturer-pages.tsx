@@ -7,6 +7,7 @@ import {
   LiveLecturerAttendanceOverview,
   LiveLecturerCourses,
   LiveLecturerCourseDetail,
+  LiveLecturerSessionDetail,
   LiveLecturerDashboard,
   LiveLecturerNotifications,
   LiveLecturerStudents,
@@ -28,6 +29,10 @@ export function LecturerCourseDetail({ courseId }: { courseId: string }) {
 
 export function LecturerAttendanceOverview() {
   return <LiveLecturerAttendanceOverview />;
+}
+
+export function LecturerSessionDetail({ sessionId }: { sessionId: string }) {
+  return <LiveLecturerSessionDetail sessionId={sessionId} />;
 }
 
 export function LecturerStartSession() {

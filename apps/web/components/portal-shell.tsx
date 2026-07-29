@@ -28,9 +28,14 @@ export function PortalShell({ role, user, children }: { role: PortalRole; user: 
   const identity = user.studentNumber ?? user.staffNumber ?? user.email;
 
   const pageKey = useMemo(() => pathname.split("/").slice(2).join("/") || "dashboard", [pathname]);
-  const meta = pageKey === "settings" && role !== "admin"
-    ? { title: "Account Settings", description: "Password and account security" }
-    : pageMeta[pageKey] ?? pageMeta.dashboard;
+  const meta =
+    pageKey === "settings" && role !== "admin"
+      ? { title: "Account Settings", description: "Password and account security" }
+      : role === "lecturer" && pageKey.startsWith("courses/")
+        ? { title: "Course Details", description: "Course information and enrolled students" }
+        : role === "lecturer" && pageKey.startsWith("attendance/session/")
+          ? { title: "Attendance Session Details", description: "Session attendance and student records" }
+          : pageMeta[pageKey] ?? pageMeta.dashboard;
 
   useEffect(() => {
     const saved = window.localStorage.getItem("classconnect-theme") === "dark";

@@ -7,6 +7,7 @@ import { Check, Eye, EyeOff, Plus, Search, X } from "lucide-react";
 import { Avatar, Badge, Button, Card } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import { useToast } from "./toast-provider";
+import { PaginatedTable } from "./paginated-table";
 
 type Programme = { id: string; code: string; name: string; awardType: string };
 type Department = { id: string; code: string; name: string; programmes: Programme[] };
@@ -96,7 +97,7 @@ export function UserDirectoryManager() {
           <div style={{ position: "relative", flex: 2 }}><Search size={16} style={{ position: "absolute", left: 12, top: 13, color: "var(--muted)" }} /><input className="input" style={{ paddingLeft: 36 }} placeholder="Search name, email, or ID" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
           <select className="select" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">All roles</option><option value="STUDENT">Student</option><option value="LECTURER">Lecturer</option><option value="ADMIN">Administrator</option></select>
         </div>
-        <div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Programme</th><th>Department</th><th>Status</th><th>Password</th><th></th></tr></thead><tbody>
+        <PaginatedTable><table><thead><tr><th>User</th><th>Role</th><th>Programme</th><th>Department</th><th>Status</th><th>Password</th><th></th></tr></thead><tbody>
           {visibleUsers.map((user) => <tr key={user.id}>
             <td><div className="student-cell"><Avatar name={`${user.firstName} ${user.lastName}`} size="sm" /><div><strong>{user.firstName} {user.lastName}</strong><span>{user.studentNumber ?? user.staffNumber ?? user.email}</span></div></div></td>
             <td>{user.role === "ADMIN" ? "Administrator" : user.role[0] + user.role.slice(1).toLowerCase()}</td>
@@ -106,7 +107,7 @@ export function UserDirectoryManager() {
             <td><Badge tone={user.mustChangePassword ? "warning" : "success"}>{user.mustChangePassword ? "Temporary" : "Changed"}</Badge></td>
             <td><Link className="ui-button ui-button--secondary ui-button--sm" href={`/admin/users/${user.id}`}>Manage</Link></td>
           </tr>)}
-        </tbody></table></div>
+        </tbody></table></PaginatedTable>
       </Card>
 
       {modal ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setModal(false); }}>

@@ -7,6 +7,7 @@ import { Avatar, Badge, Button, Card, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import { PageHeader } from "./display";
 import { useToast } from "./toast-provider";
+import { PaginatedTable } from "./paginated-table";
 
 type Student = { id: string; firstName: string; lastName: string; email: string; studentNumber: string | null; status: "ACTIVE" | "SUSPENDED" | "DISABLED" };
 type ClassAssignment = {
@@ -114,7 +115,7 @@ export function ClassAssignmentsManager() {
         <StatCard label="Classes without students" value={emptyClasses} icon={<UserRoundPlus size={20} />} trend={emptyClasses ? "Needs action" : "Complete"} trendTone={emptyClasses ? "warning" : "success"} />
       </div>
       <Card className="table-shell">
-        <div className="table-wrap"><table>
+        <PaginatedTable><table>
           <thead><tr><th>Class</th><th>Academic period</th><th>Lecturer</th><th>Students</th><th>Status</th><th></th></tr></thead>
           <tbody>{loading ? <tr><td colSpan={6}>Loading classes…</td></tr> : classes.length ? classes.map((item) => (
             <tr key={item.id}>
@@ -126,7 +127,7 @@ export function ClassAssignmentsManager() {
               <td><div style={{ display: "flex", gap: 7 }}><Button size="sm" onClick={() => openAdd(item.id)}>Add</Button><Button size="sm" variant="secondary" onClick={() => { setClassId(item.id); setManageOpen(true); }}>Manage</Button></div></td>
             </tr>
           )) : <tr><td colSpan={6}>Create a semester course before assigning students.</td></tr>}</tbody>
-        </table></div>
+        </table></PaginatedTable>
       </Card>
 
       {modalOpen ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setModalOpen(false); }}>

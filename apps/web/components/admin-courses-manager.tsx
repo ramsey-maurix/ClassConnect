@@ -8,6 +8,7 @@ import { Badge, Button, Card, StatCard } from "@classconnect/ui";
 import { apiRequest, ApiError } from "@/lib/api/client";
 import { useToast } from "./toast-provider";
 import { PageHeader } from "./display";
+import { PaginatedTable } from "./paginated-table";
 
 type Lecturer = {
   id: string;
@@ -162,8 +163,7 @@ export function AdminCoursesManager() {
           </div>
           <Button variant="secondary" onClick={() => { setQuery(""); setSemester(""); }}>Clear filters</Button>
         </div>
-        <div className="table-wrap">
-          <table>
+        <PaginatedTable><table>
             <thead><tr><th>Course</th><th>Credits</th><th>Academic period</th><th>Lecturer</th><th>Students</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {loading ? (
@@ -187,8 +187,7 @@ export function AdminCoursesManager() {
                 <tr><td colSpan={6}>No courses match your filters.</td></tr>
               )}
             </tbody>
-          </table>
-        </div>
+          </table></PaginatedTable>
       </Card>
 
       {modalOpen ? (

@@ -7,6 +7,7 @@ import { Badge, Button, Card, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import { PageHeader } from "./display";
 import { useToast } from "./toast-provider";
+import { PaginatedTable } from "./paginated-table";
 
 type Programme = { id: string; code: string; name: string; awardType: string; durationYears: number; status: "ACTIVE" | "INACTIVE" };
 type Department = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE"; programmes: Programme[] };
@@ -64,9 +65,9 @@ export function AcademicStructureManager() {
     <>
       <PageHeader title="Academic Structure" description="The fixed HTU scope used by this ClassConnect proof of concept." />
       <div className="grid grid--2" style={{ marginBottom: 17 }}><StatCard label="Faculties" value={faculties.length} icon={<University size={20} />} trend="Available" /><StatCard label="Departments" value={departmentCount} icon={<Building2 size={20} />} trend="Available" /></div>
-      <Card className="table-shell"><div className="table-wrap"><table><thead><tr><th>Faculty</th><th>Department</th><th>Programme</th><th>Award</th><th>Duration</th><th>Status</th></tr></thead><tbody>
+      <Card className="table-shell"><PaginatedTable><table><thead><tr><th>Faculty</th><th>Department</th><th>Programme</th><th>Award</th><th>Duration</th><th>Status</th></tr></thead><tbody>
         {faculties.flatMap((faculty) => faculty.departments.flatMap((department) => department.programmes.map((programme) => <tr key={programme.id}><td><strong>{faculty.name}</strong><br /><span style={{ color: "var(--muted)" }}>{faculty.code}</span></td><td>{department.name}<br /><span style={{ color: "var(--muted)" }}>{department.code}</span></td><td><strong>{programme.name}</strong><br /><span style={{ color: "var(--muted)" }}>{programme.code}</span></td><td>{programme.awardType}</td><td>{programme.durationYears} years</td><td><Badge tone={programme.status === "ACTIVE" ? "success" : "neutral"}>{programme.status}</Badge></td></tr>)))}
-      </tbody></table></div></Card>
+      </tbody></table></PaginatedTable></Card>
       {mode ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setMode(null); }}>
         <form className="modal" role="dialog" aria-modal="true" aria-labelledby="structure-modal-title" onSubmit={submit}>
           <div className="modal__head"><div><h3 id="structure-modal-title">Add {mode === "faculty" ? "Faculty" : "Department"}</h3><p>This record becomes available in user and course forms.</p></div><button type="button" className="modal__close" aria-label="Close" onClick={() => setMode(null)}><X size={16} /></button></div>

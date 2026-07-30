@@ -31,7 +31,6 @@ import {
 import {
   AdminAcademicStructure,
   AdminAnalytics,
-  AdminAttendance,
   AdminAudit,
   AdminCourses,
   AdminDashboard,
@@ -75,7 +74,6 @@ const adminPages: Record<string, ComponentType> = {
   courses: AdminCourses,
   enrolments: AdminEnrolments,
   analytics: AdminAnalytics,
-  attendance: AdminAttendance,
   reports: AdminReports,
   audit: AdminAudit,
   settings: AdminSettings,

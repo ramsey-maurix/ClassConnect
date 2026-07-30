@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookCopy, CheckCircle2, Eye, FileDown, GraduationCap, RotateCcw, ScrollText, UsersRound, X } from "lucide-react";
+import { AlertTriangle, BookCopy, CheckCircle2, Eye, FileDown, GraduationCap, RotateCcw, Save, ScrollText, Settings2, ShieldCheck, UsersRound, X } from "lucide-react";
 import { Badge, Button, Card, CardHeader, StatCard } from "@classconnect/ui";
 import { ApiError, apiRequest } from "@/lib/api/client";
 import { PageHeader } from "./display";
@@ -35,13 +35,18 @@ export function LiveAdminDashboard() {
   const [activity, setActivity] = useState<RecentAudit[]>([]);
 
   useEffect(() => {
-    Promise.all([
+    let active = true;
+    const load = () => Promise.all([
       apiRequest<AdminAnalytics>("/analytics/admin"),
       apiRequest<RecentAudit[]>("/audit?take=6"),
     ]).then(([analytics, audit]) => {
+      if (!active) return;
       setData(analytics);
-      setActivity(audit);
+      setActivity(audit.slice(0, 6));
     }).catch((error) => toast("Dashboard could not be loaded", error instanceof ApiError ? error.message : "Please retry.", "danger"));
+    void load();
+    const timer = window.setInterval(load, 30_000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
   if (!data) return <Card>Loading live system data…</Card>;
@@ -60,23 +65,24 @@ export function LiveAdminDashboard() {
         <StatCard label="Attendance rate" value={`${data.attendanceRate.toFixed(1)}%`} icon={<CheckCircle2 size={20} />} trend={data.attendanceRate ? "From verified records" : "No records yet"} />
         <StatCard label="Open risk alerts" value={data.atRiskStudents} icon={<AlertTriangle size={20} />} trend={data.atRiskStudents ? "Needs review" : "Clear"} trendTone={data.atRiskStudents ? "danger" : "success"} />
       </div>
-      <div className="grid grid--main">
-        <Card>
-          <CardHeader title="Live academic summary" description="Calculated directly from PostgreSQL" />
-          <div className="activity-list">
-            <div className="activity"><span className="activity__icon"><BookCopy size={17} /></span><div><strong>{data.totalCourses} courses</strong><p>Created course definitions</p></div></div>
-            <div className="activity"><span className="activity__icon"><GraduationCap size={17} /></span><div><strong>{data.averageGrade.toFixed(1)}% average grade</strong><p>Published and corrected grades only</p></div></div>
-            <div className="activity"><span className="activity__icon"><CheckCircle2 size={17} /></span><div><strong>{data.attendanceRate.toFixed(1)}% attendance</strong><p>Present and late records</p></div></div>
+      <div className="dashboard-summary-grid">
+        <Card className="academic-summary-card">
+          <CardHeader title="Live academic summary" description="Current institutional health from verified records" />
+          <div className="academic-summary-metrics">
+            <div className="academic-summary-metric"><span className="academic-summary-metric__icon"><BookCopy size={19} /></span><div><strong>{data.totalCourses}</strong><span>Active course definitions</span></div><small>Catalogue</small></div>
+            <div className="academic-summary-metric"><span className="academic-summary-metric__icon academic-summary-metric__icon--gold"><GraduationCap size={19} /></span><div><strong>{data.averageGrade.toFixed(1)}%</strong><span>Published grade average</span></div><small>Performance</small></div>
+            <div className="academic-summary-metric"><span className="academic-summary-metric__icon academic-summary-metric__icon--green"><CheckCircle2 size={19} /></span><div><strong>{data.attendanceRate.toFixed(1)}%</strong><span>Present and late attendance</span></div><small>Attendance</small></div>
           </div>
+          <div className="academic-summary-footer"><span>Live database connection</span><Link href="/admin/analytics">Open full analytics →</Link></div>
         </Card>
-        <Card>
-          <CardHeader title="Recent system activity" description="Latest recorded actions" />
-          <div className="activity-list">
+        <Card className="recent-activity-card">
+          <CardHeader title="Recent system activity" description="Automatically refreshes every 30 seconds" />
+          <div className="activity-list activity-list--dashboard">
             {activity.length ? activity.map((item) => (
               <div className="activity" key={item.id}>
                 <span className="activity__icon"><ScrollText size={16} /></span>
                 <div><strong>{item.action.replaceAll("_", " ")}</strong><p>{item.description} · {item.actor ? `${item.actor.firstName} ${item.actor.lastName}` : "System"}</p></div>
-                <time>{new Date(item.createdAt).toLocaleDateString()}</time>
+                <time>{new Date(item.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
               </div>
             )) : <p className="selection-empty">No system activity has been recorded yet.</p>}
           </div>
@@ -209,7 +215,7 @@ export function LiveAdminReports() {
       toast("Live report generated", `${result.rows.length} database row(s) included and the action was audited.`, "success");
     } catch (error) { toast("Report failed", error instanceof ApiError ? error.message : "Please retry.", "danger"); } finally { setLoading(false); }
   }
-  return <><PageHeader title="Reports Centre" description="Generate audited CSV reports from current PostgreSQL records." /><Card><CardHeader title="Report type" description="Choose the live dataset to generate" /><div className="report-options">{reportTypes.map(([value, label]) => <label className="report-option" data-checked={type === value} key={value}><input type="radio" checked={type === value} onChange={() => setType(value)} /><strong>{label}</strong><span>Generated from the current system records.</span></label>)}</div><div className="form-actions"><Button variant="secondary" disabled={loading} onClick={() => void generate(false)}>Preview</Button><Button disabled={loading} onClick={() => void generate(true)}><FileDown size={16} /> {loading ? "Generating…" : "Generate CSV"}</Button></div></Card>{preview ? <Card className="table-shell" style={{ marginTop: 17 }}><div style={{ padding: 18 }}><CardHeader title="Report preview" description={`${preview.rows.length} rows · generated ${new Date(preview.generatedAt).toLocaleString()}`} action={<button className="icon-button" aria-label="Close report preview" title="Close preview" onClick={() => setPreview(null)}><X size={17} /></button>} /></div><div className="table-wrap"><table><thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{preview.rows.slice(0, 20).map((row, index) => <tr key={index}>{row.map((value, cell) => <td key={cell}>{value}</td>)}</tr>)}</tbody></table></div></Card> : null}</>;
+  return <><PageHeader title="Reports Centre" description="Generate audited CSV reports from current PostgreSQL records." /><Card><CardHeader title="Report type" description="Choose the live dataset to generate" /><div className="report-options">{reportTypes.map(([value, label]) => <label className="report-option" data-checked={type === value} key={value}><input type="radio" checked={type === value} onChange={() => setType(value)} /><strong>{label}</strong><span>Generated from the current system records.</span></label>)}</div><div className="form-actions"><Button variant="secondary" disabled={loading} onClick={() => void generate(false)}>Preview</Button><Button disabled={loading} onClick={() => void generate(true)}><FileDown size={16} /> {loading ? "Generating…" : "Generate CSV"}</Button></div></Card>{preview ? <Card className="table-shell" style={{ marginTop: 17 }}><div style={{ padding: 18 }}><CardHeader title="Report preview" description={`${preview.rows.length} rows · generated ${new Date(preview.generatedAt).toLocaleString()}`} action={<button className="icon-button" aria-label="Close report preview" title="Close preview" onClick={() => setPreview(null)}><X size={17} /></button>} /></div><div className="table-wrap"><table><thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index}>{row.map((value, cell) => <td key={cell}>{value}</td>)}</tr>)}</tbody></table></div></Card> : null}</>;
 }
 
 type AuditItem = { id: string; createdAt: string; action: string; entityType: string; entityId: string | null; description: string; reason: string | null; ipAddress: string | null; actor: { firstName: string; lastName: string; email: string } | null };
@@ -231,8 +237,18 @@ export function LiveAdminSettings() {
     setSaving(true);
     try { await apiRequest("/settings", { method: "PATCH", body: JSON.stringify({ settings: Object.fromEntries(settings.map((item) => [item.key, item.value])) }) }); toast("Settings saved", "Thresholds now apply to the live system.", "success"); await load(); } catch (error) { toast("Settings could not be saved", error instanceof ApiError ? error.message : "Please retry.", "danger"); } finally { setSaving(false); }
   }
+  const attendanceKeys = new Set(["qrRotationSeconds", "defaultSessionDurationMinutes", "defaultLateAfterMinutes", "defaultGpsRadiusMetres", "absenceLimit", "minimumAttendancePercentage"]);
   const behavior = settings.filter((item) => typeof item.value === "boolean");
-  const thresholds = settings.filter((item) => typeof item.value !== "boolean");
+  const attendance = settings.filter((item) => attendanceKeys.has(item.key));
+  const general = settings.filter((item) => typeof item.value !== "boolean" && !attendanceKeys.has(item.key) && item.key !== "lateThresholdMinutes");
   const row = (item: Setting) => { const index = settings.findIndex((setting) => setting.key === item.key); return <div className="settings-row" key={item.key}><div><h4>{item.key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase())}</h4><p>{item.description}</p></div>{typeof item.value === "boolean" ? <button className="switch" data-on={item.value} aria-label={`Toggle ${item.key}`} onClick={() => setSettings((current) => current.map((setting, position) => position === index ? { ...setting, value: !setting.value } : setting))}><span /></button> : <input className="settings-input" type={typeof item.value === "number" ? "number" : "text"} value={String(item.value)} onChange={(event) => setSettings((current) => current.map((setting, position) => position === index ? { ...setting, value: typeof item.value === "number" ? Number(event.target.value) : event.target.value } : setting))} />}</div>; };
-  return <div className="settings-page"><div className="settings-grid"><Card className="settings-card"><CardHeader title="System behaviour" description="Security, verification, notification, and audit controls" />{behavior.map(row)}</Card><Card className="settings-card"><CardHeader title="Academic thresholds" description="Attendance sessions, GPA warnings, and risk thresholds" />{thresholds.map(row)}</Card></div><div className="settings-actions"><span>Changes apply across attendance, grading, and academic-risk workflows.</span><div><Button variant="secondary" onClick={() => void load()}>Reset Unsaved</Button><Button disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save Settings"}</Button></div></div></div>;
+  return <div className="settings-page">
+    <div className="settings-hero"><div className="settings-hero__icon"><Settings2 size={24} /></div><div><h2>System configuration</h2><p>Manage institutional identity, attendance rules, security, and academic safeguards from one place.</p></div><div className="settings-hero__actions"><Button variant="secondary" onClick={() => void load()}><RotateCcw size={16} /> Reset unsaved</Button><Button disabled={saving} onClick={() => void save()}><Save size={16} /> {saving ? "Saving…" : "Save changes"}</Button></div></div>
+    <div className="settings-sections">
+      <Card className="settings-card"><div className="settings-section-heading"><span><ShieldCheck size={19} /></span><div><h3>System behaviour</h3><p>Verification, notification, and audit controls.</p></div></div>{behavior.map(row)}</Card>
+      <Card className="settings-card settings-card--attendance"><div className="settings-section-heading"><span><CheckCircle2 size={19} /></span><div><h3>Attendance policies</h3><p>Defaults applied to every new lecturer attendance session.</p></div></div>{attendance.map(row)}</Card>
+      {general.length ? <Card className="settings-card settings-card--wide"><div className="settings-section-heading"><span><BookCopy size={19} /></span><div><h3>Institutional and academic settings</h3><p>General system values and academic thresholds.</p></div></div><div className="settings-card__columns">{general.map(row)}</div></Card> : null}
+    </div>
+    <div className="settings-actions"><span>Policy changes take effect for newly created attendance sessions. Every update is recorded in the audit log.</span><strong>{settings.length} configured controls</strong></div>
+  </div>;
 }

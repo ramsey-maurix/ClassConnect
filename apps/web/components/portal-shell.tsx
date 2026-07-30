@@ -11,6 +11,7 @@ import { navigation, pageMeta } from "@/lib/navigation";
 import type { PortalRole, SessionUser } from "@/lib/types";
 import { apiRequest, authApi } from "@/lib/api/client";
 import { useToast } from "./toast-provider";
+import { TablePaginationManager } from "./table-pagination-manager";
 
 function NavIcon({ name }: { name: string }) {
   const Icon = (Icons as unknown as Record<string, ComponentType<{ size?: number }>>)[name] ?? Icons.Circle;
@@ -121,7 +122,7 @@ export function PortalShell({ role, user, children }: { role: PortalRole; user: 
             <Link className="icon-button" href={`/${role}/notifications`} aria-label={`${unreadNotifications} unread notifications`} title="Notifications"><Icons.Bell />{unreadNotifications ? <span className="notification-dot" /> : null}</Link>
           </div>
         </header>
-        <div className="portal-content">{children}</div>
+        <div className="portal-content">{children}<TablePaginationManager /></div>
       </main>
     </div>
   );
